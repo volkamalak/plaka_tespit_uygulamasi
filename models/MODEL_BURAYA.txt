@@ -1,0 +1,30 @@
+YOLO Modelini Buraya Yerleştirin
+====================================
+
+Bu klasöre 'best.pt' adında eğitilmiş YOLO modelinizi yerleştirmeniz gerekiyor.
+
+Model Nasıl Oluşturulur?
+------------------------
+
+1. Roboflow.com üzerinden plaka dataset'i oluşturun
+2. Dataset'i YOLO formatında dışa aktarın
+3. Ultralytics YOLO ile model eğitin:
+
+   from ultralytics import YOLO
+
+   model = YOLO('yolov8n.pt')
+   results = model.train(
+       data='data.yaml',
+       epochs=100,
+       imgsz=640
+   )
+
+4. Eğitim sonrası oluşan 'best.pt' dosyasını bu klasöre kopyalayın
+
+Model Konumu
+------------
+📁 plaka_tespit_uygulamasi/
+   └── 📁 models/
+       └── 📄 best.pt  <-- Modelinizi buraya koyun
+
+Model olmadan uygulama çalışmaz!
