@@ -1,0 +1,13 @@
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 1
+names: ['License_Plate']
+
+roboflow:
+  workspace: volkamalak
+  project: license-plate-recognition-rxg4e-ckp71
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/volkamalak/license-plate-recognition-rxg4e-ckp71/dataset/1
