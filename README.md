@@ -4,11 +4,13 @@ Python ve YOLO kullanarak resimlerde plaka tespiti yapan masaüstü uygulaması.
 
 ## Özellikler
 
-- Resimden otomatik plaka tespiti
-- Tespit edilen plakanın koordinatlarını gösterme
-- İşlem süresini ölçme
-- Görsel arayüz ile kolay kullanım
-- İşlenmiş resimleri kaydetme
+- 🚗 **YOLO v8/v11** ile otomatik plaka tespiti
+- 📝 **Çift OCR Motoru** (Tesseract + EasyOCR) - Daha doğru okuma
+- 📍 Tespit edilen plakanın koordinatlarını gösterme
+- ⏱️ İşlem süresini ölçme
+- 🖥️ Görsel arayüz (Tkinter) ile kolay kullanım
+- 💾 İşlenmiş resimleri kaydetme
+- 🇹🇷🇬🇧 Türkçe + İngilizce dil desteği
 
 ## Gereksinimler
 
