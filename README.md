@@ -1,199 +1,257 @@
 # Plaka Tespit Uygulaması
 
-Python ve YOLO kullanarak resimlerde plaka tespiti yapan masaüstü uygulaması.
+Python ve Ultralytics YOLO kullanarak görüntülerde plaka tespiti ve okuma yapan, Tkinter tabanlı masaüstü uygulaması.
 
 ## Özellikler
 
-- 🚗 **YOLO v8/v11** ile otomatik plaka tespiti
-- 📝 **Çift OCR Motoru** (Tesseract + EasyOCR) - Daha doğru okuma
-- 📍 Tespit edilen plakanın koordinatlarını gösterme
-- ⏱️ İşlem süresini ölçme
-- 🖥️ Görsel arayüz (Tkinter) ile kolay kullanım
-- 💾 İşlenmiş resimleri kaydetme
-- 🇹🇷🇬🇧 Türkçe + İngilizce dil desteği
+- 🚗 **YOLO tabanlı plaka tespiti** (eğitilmiş model ile)
+- 🔎 **İki okuma modu**: Character YOLO modeli + OCR (Tesseract + EasyOCR)
+- 🎥 **Video desteği**: Video yükleme, oynatma ve stabil okuma
+- 📍 **Koordinat ve güven skorlarını gösterme**
+- ⏱️ **İşlem süresi ölçümü**
+- 💾 **Kırpılmış plaka görüntüsünü kaydetme**
+- 🇹🇷🇬🇧 **Türkçe ve İngilizce OCR desteği**
 
 ## Gereksinimler
 
-- Python 3.8 veya üzeri
-- YOLO modeli (best.pt)
+- Python 3.8+ (önerilen: 3.10+)
+- Tesseract OCR ikilisi (sistemde kurulu olmalı)
+- (Opsiyonel) CUDA destekli GPU (daha hızlı tespit ve OCR için)
 
-## Kurulum
+Python bağımlılıkları `requirements.txt` içinde listelenir.
 
-### 1. Gerekli Kütüphaneleri Yükleyin
+## Kurulum (Adım Adım - Tüm İşletim Sistemleri)
+
+Kurulum adımları tüm sistemlerde aynıdır; sadece Python/Tesseract kurulumu ve paket yöneticisi farklıdır.
+
+### 0) Projeyi açın
+
+Terminali proje klasöründe açın:
+
+```
+plaka_tespit_uygulamasi/
+```
+
+### 1) Model dosyalarını yerleştirin
+
+```
+models/
+├── best.pt             # Zorunlu: plaka tespit modeli
+└── character_best.pt   # Opsiyonel: karakter (harf/rakam) modeli
+```
+
+### 2) Windows (PowerShell / CMD)
+
+1. **Python 3.8+ kurun**  
+   - Kurulumda **“Add Python to PATH”** seçeneğini işaretleyin.
+2. **Sanal ortam oluşturun ve etkinleştirin**
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\activate
+```
+
+3. **Bağımlılıkları yükleyin**
+
+```powershell
+pip install -r requirements.txt
+```
+
+4. **Tesseract OCR kurun**
+   - Kurulumdan sonra `C:\Program Files\Tesseract-OCR` klasörünü PATH'e ekleyin.
+5. **Kurulumu doğrulayın**
+
+```powershell
+tesseract --version
+```
+
+### 3) macOS (Terminal)
+
+1. **Python ve Tesseract kurun** (Homebrew ile)
+
+```bash
+brew install python tesseract
+```
+
+2. **Sanal ortam oluşturun ve etkinleştirin**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+3. **Bağımlılıkları yükleyin**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. YOLO Modelini Yerleştirin
-
-Eğittiğiniz `best.pt` modelini `models/` klasörüne yerleştirin:
-
-```
-plaka_tespit_uygulamasi/
-├── models/
-│   └── best.pt          <- Modelinizi buraya koyun
-├── images/              <- Test resimleri için
-├── results/             <- Sonuçlar için
-├── plaka/
-│   ├── detector.py
-│   ├── ocr.py
-│   ├── character_detector.py
-│   └── gui.py
-├── scripts/             <- Test ve yardımcı scriptler
-├── docs/                <- Dokümantasyon
-├── main.py              <- Uygulama giriş noktası
-└── requirements.txt
-```
-
-### 3. Model Eğitimi (Roboflow ile)
-
-1. [Roboflow](https://roboflow.com/) hesabınıza giriş yapın
-2. Yeni bir proje oluşturun ve plaka görsellerinizi yükleyin
-3. Görselleri etiketleyin (bounding box ile)
-4. Dataset'i dışa aktarın (YOLO formatında)
-5. Ultralytics YOLO ile modeli eğitin:
+4. **Kurulumu doğrulayın**
 
 ```bash
-from ultralytics import YOLO
-
-# Model oluştur
-model = YOLO('yolov8n.pt')  # veya 'yolov11n.pt'
-
-# Eğitim
-results = model.train(
-    data='path/to/data.yaml',
-    epochs=100,
-    imgsz=640,
-    batch=16
-)
-
-# En iyi model 'runs/detect/train/weights/best.pt' konumunda olacak
+tesseract --version
 ```
 
-6. `best.pt` dosyasını `models/` klasörüne kopyalayın
+### 4) Linux (Ubuntu / Debian)
 
-## Kullanım
+1. **Sistem paketlerini kurun**
 
-### Uygulamayı Başlatma
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip python3-tk tesseract-ocr
+```
+
+2. **Sanal ortam oluşturun ve etkinleştirin**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+3. **Bağımlılıkları yükleyin**
+
+```bash
+pip install -r requirements.txt
+```
+
+4. **Kurulumu doğrulayın**
+
+```bash
+tesseract --version
+```
+
+### 5) Linux (Fedora)
+
+1. **Sistem paketlerini kurun**
+
+```bash
+sudo dnf install -y python3 python3-pip python3-tkinter tesseract
+```
+
+2. **Sanal ortam oluşturun ve etkinleştirin**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+3. **Bağımlılıkları yükleyin**
+
+```bash
+pip install -r requirements.txt
+```
+
+4. **Kurulumu doğrulayın**
+
+```bash
+tesseract --version
+```
+
+### 6) Linux (Arch)
+
+1. **Sistem paketlerini kurun**
+
+```bash
+sudo pacman -S --needed python python-pip tk tesseract
+```
+
+2. **Sanal ortam oluşturun ve etkinleştirin**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+3. **Bağımlılıkları yükleyin**
+
+```bash
+pip install -r requirements.txt
+```
+
+4. **Kurulumu doğrulayın**
+
+```bash
+tesseract --version
+```
+
+> GPU ile hızlandırma için `docs/GPU_OPTIMIZATION.md` dosyasına göz atın.
+
+## Çalıştırma
 
 ```bash
 python main.py
 ```
 
-### Adım Adım Kullanım
+Uygulama açıldığında:
+- **Resim Yükle** ile görüntü seçin.
+- **Plakayı Tespit Et** ile plaka bölgesini bulun.
+- **Metni Oku** ile modeli ve/veya OCR'yi çalıştırın.
+- **Kaydet** ile kırpılmış plaka görüntüsünü diske yazın.
 
-1. **Resim Yükle**: "Resim Yükle" butonuna tıklayarak test edeceğiniz resmi seçin
-2. **Çalıştır**: "Çalıştır" butonuna basarak plaka tespitini başlatın
-3. **Sonuçları Görüntüle**:
-   - Sol tarafta orijinal resim
-   - Sağ tarafta tespit edilen plaka çerçeve içinde
-   - Alt kısımda koordinatlar ve işlem süresi
-4. **Kaydet**: İsterseniz işlenmiş resmi "Sonucu Kaydet" butonu ile kaydedin
+## Video Modu
 
-## Proje Yapısı
+1) **Video Yükle** ile bir video seçin.
+2) **Oynat** ile akışı başlatın.
+3) Uygulama belirli aralıklarla plaka tespiti yapar.
+4) Stabil okuma yakalandığında sonuç paneli güncellenir.
 
-```
-plaka_tespit_uygulamasi/
-│
-├── main.py              # Ana uygulama giriş noktası
-├── plaka/gui.py          # GUI kodu
-├── plaka/detector.py     # YOLO plaka tespit modülü
-├── plaka/ocr.py          # OCR modülü
-├── plaka/character_detector.py  # Karakter tespiti
-├── requirements.txt     # Python kütüphaneleri
-├── README.md           # Bu dosya
-├── scripts/            # Test ve yardımcı scriptler
-├── docs/               # Ek dokümantasyon
-│
-├── models/             # YOLO modelleri
-│   └── best.pt        # Eğitilmiş model
-│
-├── images/            # Test resimleri
-│   └── (test görselleri)
-│
-└── results/           # İşlenmiş resimler
-    └── (sonuç görselleri)
-```
+> Video modunda okuma için "Model" ve/veya "OCR" anahtarları kullanılır.
 
-## Teknik Detaylar
+## Model Dosyaları Hakkında
 
-### Kullanılan Teknolojiler
+- `models/best.pt` **zorunludur**. Yoksa plaka tespiti yapılamaz.
+- `models/character_best.pt` **opsiyoneldir**. Yoksa karakter modeli devre dışı kalır; OCR yine çalışır.
 
-- **Ultralytics YOLO**: Plaka tespiti için
-- **OpenCV**: Görüntü işleme
-- **Tkinter**: Grafik arayüz
-- **Pillow**: Resim gösterimi
+Model yolunu değiştirmek için `plaka/detector.py` içindeki `model_path` ve `character_model_path` değerlerini güncelleyebilirsiniz.
 
-### plaka/detector.py
-
-`PlakaDetector` sınıfı:
-- `load_model()`: YOLO modelini yükler
-- `detect_plate()`: Plaka tespiti yapar
-- `save_result()`: İşlenmiş resmi kaydeder
-
-### plaka/gui.py
-
-`PlakaTespitUygulamasi` sınıfı:
-- İki bölmeli görsel arayüz
-- Resim yükleme ve gösterme
-- Tespit sonuçlarını görselleştirme
-- Koordinat ve süre bilgilerini gösterme
-
-## Özelleştirme
-
-### Güven Eşiği Ayarlama
-
-`plaka/detector.py` dosyasında:
+## Kod ile Kullanım (Örnek)
 
 ```python
-result = detector.detect_plate(image_path, conf_threshold=0.25)
+from plaka.detector import PlakaDetector
+
+# Model + OCR ile tek resim
+model = PlakaDetector(
+    model_path="models/best.pt",
+    use_ocr=True,
+    ocr_languages=["tur", "eng"],
+    use_character_model=True,
+    character_model_path="models/character_best.pt",
+)
+
+result = model.detect_plate("/path/to/image.jpg", conf_threshold=0.25, read_text=True)
+print(result["success"], result.get("plate_texts"))
 ```
 
-`conf_threshold` parametresini değiştirerek güven eşiğini ayarlayabilirsiniz (0-1 arası).
+## Yapılandırma İpuçları
 
-### Çerçeve Rengi Değiştirme
+- **Güven eşiği**: `detect_plate(..., conf_threshold=0.25)`
+- **OCR dilleri**: `PlakaDetector(ocr_languages=["tur", "eng"])`
+- **Model/OCR anahtarları**: GUI üzerindeki "Model" ve "OCR" butonları ile aç/kapat
+- **Video parametreleri**: `plaka/gui.py` içindeki `video_*` değişkenleri
 
-`plaka/detector.py` dosyasında çizim kısmını düzenleyin:
+## Çıktı ve Klasörler
 
-```python
-# Yeşil çerçeve (varsayılan)
-cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+- `results/` : Kaydedilen çıktılar ve debug dosyaları
+- `results/debug_char/` : "Metni Oku" işlemi sırasında kaydedilen karakter debug görüntüleri
+- `./.easyocr/` : EasyOCR model cache klasörü (ilk çalıştırmada oluşur)
 
-# Kırmızı çerçeve için
-cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+## Test ve Yardımcı Scriptler
 
-# Mavi çerçeve için
-cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-```
+`scripts/` klasörü altında hızlı test ve yardımcı komutlar bulunur.
+Bazı scriptlerde sabit dosya yollarının güncellenmesi gerekir:
+- `scripts/test_detector.py`
+- `scripts/test_ocr.py`
+- `scripts/quick_test.py`
 
-## Sorun Giderme
+## Sık Görülen Sorunlar
 
-### "Model Bulunamadı" Hatası
+- **Model bulunamadı**: `models/best.pt` dosyasının var olduğundan emin olun.
+- **Tesseract bulunamadı**: `tesseract --version` çalışmıyorsa Tesseract kurulumu eksiktir.
+- **OCR yavaş**: GPU varsa PyTorch + CUDA ile hızlanır. GPU yoksa OCR'yi kapatabilirsiniz.
 
-- `models/best.pt` dosyasının var olduğundan emin olun
-- Dosya yolunun doğru olduğunu kontrol edin
+## Dokümantasyon
 
-### Plaka Tespit Edilemiyor
-
-- Model eğitiminin yeterli olup olmadığını kontrol edin
-- Güven eşiğini düşürmeyi deneyin (`conf_threshold`)
-- Test resminizin kalitesini kontrol edin
-
-### Performans Sorunları
-
-- GPU kullanımı için CUDA kurulumunu yapın
-- Daha küçük bir YOLO modeli deneyin (yolov8n, yolov11n)
-- Resim boyutunu küçültün
-
-## Lisans
-
-Bu proje eğitim amaçlı geliştirilmiştir.
-
-## İletişim
-
-Sorularınız için proje sahibi ile iletişime geçin.
-
----
-
-**Not**: Uygulamayı kullanmadan önce `best.pt` modelini `models/` klasörüne yerleştirmeyi unutmayın!
+Daha ayrıntılı notlar için:
+- `docs/KURULUM.md`
+- `docs/OCR_IMPROVEMENTS.md`
+- `docs/GPU_OPTIMIZATION.md`
