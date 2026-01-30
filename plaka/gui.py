@@ -63,13 +63,7 @@ class PlakaTespitUygulamasi:
         self.video_last_shown = None
         self.video_stable_required = 3
         self.video_stable_target_s = 1.0
-        self.video_confidence_threshold = 0.75
-        self.video_burst_frames = 10
-        self.video_burst_detect_every_n = 2
-        self.video_min_bbox_area_ratio = 0.002
-        self.video_auto_burst = True
-        self.video_burst_in_progress = False
-        self.video_burst_cooldown_frames = 0
+        self.video_confidence_threshold = 0.65
 
         # GUI oluştur
         self.create_gui()
@@ -546,97 +540,6 @@ class PlakaTespitUygulamasi:
         if self.video_running:
             self.update_video_frame()
 
-    def run_video_burst(self, auto=False):
-        """Video/stream içinde burst analiz yap."""
-        if not self.video_cap:
-            if not auto:
-                messagebox.showwarning("Uyarı", "Önce video yükleyin!")
-            return
-
-        if self.video_burst_in_progress:
-            return
-
-        self.video_burst_in_progress = True
-
-        self.status_label.config(text="Burst analiz ediliyor...")
-        self.status_hint.config(text="Lütfen bekleyin")
-        self.root.update()
-
-        read_text = bool(self.detector.use_character_model)
-
-        try:
-            result = self.detector.detect_plate_in_stream(
-                self.video_cap,
-                conf_threshold=0.25,
-                burst_frames=self.video_burst_frames,
-                read_text=read_text,
-                min_bbox_area_ratio=self.video_min_bbox_area_ratio,
-                detect_every_n=self.video_burst_detect_every_n,
-            )
-        except Exception as e:
-            if not auto:
-                messagebox.showerror("Hata", f"Burst analiz hatası: {str(e)}")
-            self.status_label.config(text="Burst başarısız")
-            self.video_burst_in_progress = False
-            return
-
-        if result.get("last_frame") is not None:
-            self.original_image = result["last_frame"]
-            self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
-
-        if not result.get("success"):
-            err = result.get("error") or "Burst sonucu alınamadı"
-            self.status_label.config(text="Burst başarısız")
-            self.status_hint.config(text=err)
-            self.video_burst_in_progress = False
-            return
-
-        self.last_coords = result.get("best_bbox")
-        best_crop = result.get("best_plate_crop")
-        if best_crop is not None:
-            self.cropped_plate = best_crop
-            self.display_image(self.cropped_plate, self.plate_canvas, bgr_to_rgb=True)
-            self.read_btn.config(state=tk.NORMAL)
-
-        plate_text = result.get("best_plate_text") or ""
-        plate_conf = float(result.get("best_plate_conf") or 0.0)
-        det_conf = float(result.get("best_detector_conf") or 0.0)
-        sharpness = float(result.get("best_sharpness") or 0.0)
-
-        if plate_text:
-            self.status_label.config(
-                text=f"Burst: {plate_text} ({plate_conf:.1%})"
-            )
-        else:
-            self.status_label.config(
-                text=f"Burst: Plaka bulundu ({det_conf:.1%})"
-            )
-        self.status_hint.config(text="Burst tamamlandı")
-
-        # Sonuç panellerini güncelle
-        if read_text and plate_text:
-            model_result = "Burst Sonucu\n" + ("─" * 25) + "\n"
-            model_result += f"Plaka: {plate_text}\n"
-            model_result += f"Güven: {plate_conf:.1%}\n"
-            model_result += f"Det. Güven: {det_conf:.1%}\n"
-            model_result += f"Keskinlik: {sharpness:.1f}"
-        else:
-            model_result = "Burst\nMetin okunmadı"
-
-        ocr_result = "OCR bu modda çalıştırılmadı"
-
-        self.model_text.config(state=tk.NORMAL)
-        self.model_text.delete('1.0', tk.END)
-        self.model_text.insert('1.0', model_result)
-        self.model_text.config(state=tk.DISABLED)
-
-        self.ocr_text.config(state=tk.NORMAL)
-        self.ocr_text.delete('1.0', tk.END)
-        self.ocr_text.insert('1.0', ocr_result)
-        self.ocr_text.config(state=tk.DISABLED)
-
-        self.video_burst_in_progress = False
-
     def update_video_frame(self):
         """Video karelerini güncelle"""
         if not self.video_running or not self.video_cap:
@@ -652,9 +555,6 @@ class PlakaTespitUygulamasi:
         self.original_image = frame
         self.display_image(frame, self.original_canvas, bgr_to_rgb=True)
 
-        if self.video_burst_cooldown_frames > 0:
-            self.video_burst_cooldown_frames -= 1
-
         # Video akışında plaka tespitini her N karede yap
         if self.detector.model:
             if self.video_frame_index % self.video_every_n == 0:
@@ -665,17 +565,8 @@ class PlakaTespitUygulamasi:
                     self.last_coords = (x1, y1, x2, y2)
                     self.display_image(self.cropped_plate, self.plate_canvas, bgr_to_rgb=True)
                     self.read_btn.config(state=tk.NORMAL)
-                    burst_ran = False
-                    if self.video_auto_burst and not self.video_burst_in_progress:
-                        if self.video_burst_cooldown_frames == 0:
-                            self.run_video_burst(auto=True)
-                            self.video_burst_cooldown_frames = max(
-                                self.video_burst_frames, self.video_every_n
-                            )
-                            burst_ran = True
-                    if not burst_ran:
-                        if self.detector.use_character_model or self.detector.use_ocr:
-                            self.process_video_read()
+                    if self.detector.use_character_model or self.detector.use_ocr:
+                        self.process_video_read()
 
         self.video_frame_index += 1
         self.root.after(self.video_delay_ms, self.update_video_frame)
@@ -788,8 +679,6 @@ class PlakaTespitUygulamasi:
         self.video_stable_count = 0
         self.video_last_shown = None
         self.play_btn.config(state=tk.DISABLED, text="Oynat")
-        self.video_burst_in_progress = False
-        self.video_burst_cooldown_frames = 0
 
     def on_close(self):
         """Uygulama kapanışı"""
