@@ -46,7 +46,7 @@ Status: ✅ BAŞARILI - İl kodu ve harfler doğru okunuyor
 ```bash
 # EasyOCR otomatik kuruldu, model indirildi
 # Test et:
-.venv/bin/python test_ocr.py
+.venv/bin/python scripts/test_ocr.py
 ```
 
 ### 🎯 Beklenen İyileştirmeler
@@ -71,7 +71,7 @@ Status: ✅ BAŞARILI - İl kodu ve harfler doğru okunuyor
 .venv/bin/python main.py
 
 # Test et
-.venv/bin/python test_ocr.py
+.venv/bin/python scripts/test_ocr.py
 ```
 
 ---

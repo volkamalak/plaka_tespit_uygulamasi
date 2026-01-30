@@ -113,7 +113,7 @@ results = model.train(
 ### Komut Satırından Test
 
 ```python
-from detector import PlakaDetector
+from plaka.detector import PlakaDetector
 
 detector = PlakaDetector()
 result = detector.detect_plate('test_resmi.jpg')
@@ -164,10 +164,10 @@ Doğru yapıda olduğundan emin olun:
 ```
 plaka_tespit_uygulamasi/
 ├── main.py
-├── detector.py
+├── plaka/detector.py
 ├── requirements.txt
 ├── README.md
-├── KURULUM.md
+├── docs/KURULUM.md
 ├── models/
 │   └── best.pt          ← Modeliniz burada olmalı
 ├── images/

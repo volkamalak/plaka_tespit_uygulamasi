@@ -4,7 +4,7 @@ Full Pipeline Test - YOLO + OCR
 """
 
 import cv2
-from detector import PlakaDetector
+from plaka.detector import PlakaDetector
 
 image_path = "/home/bugra/Desktop/foto/vlcsnap-2026-01-28-16h47m19s390.png"
 

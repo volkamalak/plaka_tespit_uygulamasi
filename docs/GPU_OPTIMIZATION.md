@@ -54,7 +54,7 @@ results = self.model(image, conf=conf_threshold, verbose=False, device=0)
 .venv/bin/python main.py
 
 # Test et
-.venv/bin/python test_detector.py
+.venv/bin/python scripts/test_detector.py
 ```
 
 ---
@@ -77,4 +77,3 @@ results = self.model(image, conf=conf_threshold, verbose=False, device=0)
 1. **Gerçek plaka resmi test et** (en önemli!)
 2. Model eğitimini iyileştir (daha fazla veri)
 3. OCR parametrelerini fine-tune et
-

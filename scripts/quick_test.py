@@ -6,7 +6,7 @@ Hızlı Test - Tesseract ile (GPU EasyOCR'ı atla)
 import cv2
 import numpy as np
 from pathlib import Path
-from ocr import PlakaOCR
+from plaka.ocr import PlakaOCR
 
 # Test 1: Sentetik plaka
 print("="*60)

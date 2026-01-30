@@ -9,8 +9,8 @@ import cv2
 import time
 from ultralytics import YOLO
 from pathlib import Path
-from ocr import PlakaOCR
-from character_detector import CharacterDetector
+from .ocr import PlakaOCR
+from .character_detector import CharacterDetector
 
 
 class PlakaDetector:
@@ -295,6 +295,7 @@ class PlakaDetector:
         coords=None,
         use_full_image_for_char=False,
         debug_dir=None,
+        use_ocr=None,
     ):
         """
         Plakayı hem Character Model hem OCR ile okur.
@@ -400,7 +401,8 @@ class PlakaDetector:
                 }
 
         # OCR (BGR ve GRAY)
-        if self.use_ocr and self.ocr:
+        use_ocr_flag = self.use_ocr if use_ocr is None else use_ocr
+        if use_ocr_flag and self.ocr:
             ocr_bgr = self.ocr.read_plate(plate_bgr)
             try:
                 gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
@@ -439,6 +441,221 @@ class PlakaDetector:
             _, plate_text, plate_conf = max(candidates, key=lambda x: x[2])
 
         return plate_text, plate_conf, model_data, ocr_data
+
+    def detect_plate_in_stream(
+        self,
+        cap,
+        conf_threshold=0.25,
+        burst_frames=10,
+        read_text=True,
+        min_bbox_area_ratio=0.002,
+        detect_every_n=1,
+    ):
+        """
+        Video/stream içinde N frame boyunca çalışıp en iyi sonucu döndürür.
+        """
+        result = {
+            "success": False,
+            "best_plate_text": "",
+            "best_plate_conf": 0.0,
+            "best_bbox": None,
+            "best_detector_conf": 0.0,
+            "best_sharpness": 0.0,
+            "best_plate_crop": None,
+            "last_frame": None,
+            "processing_time": 0.0,
+            "debug": {"candidates": []},
+            "error": None,
+        }
+
+        start_time = time.time()
+
+        if self.model is None:
+            result["error"] = "Model yüklü değil."
+            result["processing_time"] = time.time() - start_time
+            return result
+
+        if cap is None or not hasattr(cap, "isOpened") or not cap.isOpened():
+            result["error"] = "Video kaynağı açılamadı."
+            result["processing_time"] = time.time() - start_time
+            return result
+
+        if burst_frames <= 0:
+            result["error"] = "burst_frames 0'dan büyük olmalı."
+            result["processing_time"] = time.time() - start_time
+            return result
+
+        if detect_every_n < 1:
+            detect_every_n = 1
+
+        raw_candidates = []
+        sharpness_values = []
+        last_bbox = None
+        last_det_conf = 0.0
+        last_frame = None
+
+        try:
+            for frame_idx in range(burst_frames):
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    if frame_idx == 0:
+                        result["error"] = "Frame okunamadı."
+                    break
+
+                last_frame = frame
+                h, w = frame.shape[:2]
+                frame_area = float(h * w) if h and w else 0.0
+
+                # Belirli aralıklarla tespit yap, aralarda bbox'u reuse et
+                run_detect = (frame_idx % detect_every_n == 0) or last_bbox is None
+                bbox = None
+                det_conf = 0.0
+
+                if run_detect:
+                    best_score = None
+                    best_bbox = None
+                    best_conf = 0.0
+
+                    # detect_plate_in_image ile aynı çekirdek mantık (YOLO + bbox seçimi)
+                    results = self.model(frame, conf=conf_threshold, verbose=False)
+                    for r in results:
+                        for box in r.boxes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            conf = float(box.conf[0])
+
+                            bw = max(0, x2 - x1)
+                            bh = max(0, y2 - y1)
+                            area = float(bw * bh)
+                            if frame_area <= 0:
+                                continue
+                            area_norm = area / frame_area
+
+                            # Çok küçük bbox'ları ele
+                            if area_norm < min_bbox_area_ratio:
+                                continue
+
+                            score = 0.7 * conf + 0.3 * area_norm
+                            if best_score is None or score > best_score:
+                                best_score = score
+                                best_bbox = (x1, y1, x2, y2)
+                                best_conf = conf
+
+                    if best_bbox:
+                        last_bbox = best_bbox
+                        last_det_conf = best_conf
+                        bbox = best_bbox
+                        det_conf = best_conf
+                    else:
+                        last_bbox = None
+                        last_det_conf = 0.0
+                else:
+                    bbox = last_bbox
+                    det_conf = last_det_conf
+
+                if not bbox:
+                    continue
+
+                x1, y1, x2, y2 = bbox
+                x1 = max(0, min(int(x1), w - 1))
+                y1 = max(0, min(int(y1), h - 1))
+                x2 = max(0, min(int(x2), w))
+                y2 = max(0, min(int(y2), h))
+                if x2 <= x1 or y2 <= y1:
+                    continue
+
+                plate_crop = frame[y1:y2, x1:x2]
+                if plate_crop is None or plate_crop.size == 0:
+                    continue
+
+                # Keskinlik skoru (Laplacian variance)
+                try:
+                    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+                except Exception:
+                    gray = plate_crop
+                sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+                plate_text = ""
+                plate_conf = 0.0
+                if read_text:
+                    plate_text, plate_conf, _, _ = self.read_plate_text(
+                        plate_crop,
+                        image_is_rgb=False,
+                        use_ocr=False,
+                    )
+
+                raw_candidates.append({
+                    "frame_idx": frame_idx,
+                    "text": plate_text,
+                    "plate_conf": float(plate_conf or 0.0),
+                    "det_conf": float(det_conf or 0.0),
+                    "sharpness": sharpness,
+                    "bbox": (x1, y1, x2, y2),
+                    "_crop": plate_crop.copy(),
+                })
+                sharpness_values.append(sharpness)
+
+        except Exception as e:
+            result["error"] = f"Stream tespit hatası: {e}"
+            result["processing_time"] = time.time() - start_time
+            return result
+
+        if not raw_candidates:
+            if result["error"] is None:
+                result["error"] = "Aday bulunamadı."
+            result["processing_time"] = time.time() - start_time
+            result["last_frame"] = last_frame
+            return result
+
+        min_sh = min(sharpness_values) if sharpness_values else 0.0
+        max_sh = max(sharpness_values) if sharpness_values else 0.0
+        denom = max_sh - min_sh
+
+        best_score = None
+        best_candidate = None
+
+        for cand in raw_candidates:
+            if denom > 0:
+                sharp_norm = (cand["sharpness"] - min_sh) / denom
+            else:
+                sharp_norm = 0.0
+
+            score = (
+                0.55 * cand["plate_conf"]
+                + 0.35 * sharp_norm
+                + 0.10 * cand["det_conf"]
+            )
+
+            result["debug"]["candidates"].append({
+                "frame_idx": cand["frame_idx"],
+                "text": cand["text"],
+                "plate_conf": cand["plate_conf"],
+                "det_conf": cand["det_conf"],
+                "sharpness": cand["sharpness"],
+                "score": score,
+                "bbox": cand["bbox"],
+            })
+
+            if best_score is None or score > best_score:
+                best_score = score
+                best_candidate = cand
+
+        if not best_candidate:
+            result["error"] = "En iyi aday seçilemedi."
+            result["processing_time"] = time.time() - start_time
+            result["last_frame"] = last_frame
+            return result
+
+        result["success"] = True
+        result["best_plate_text"] = best_candidate["text"]
+        result["best_plate_conf"] = best_candidate["plate_conf"]
+        result["best_bbox"] = best_candidate["bbox"]
+        result["best_detector_conf"] = best_candidate["det_conf"]
+        result["best_sharpness"] = best_candidate["sharpness"]
+        result["best_plate_crop"] = best_candidate.get("_crop")
+        result["last_frame"] = last_frame
+        result["processing_time"] = time.time() - start_time
+
+        return result
 
     def save_result(self, image, output_path):
         """

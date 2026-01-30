@@ -5,7 +5,7 @@ Plaka Doğrulama Mekanizması - Testler
 
 import cv2
 from pathlib import Path
-from ocr import PlakaOCR
+from plaka.ocr import PlakaOCR
 
 image_path = Path("/home/bugra/Desktop/foto/vlcsnap-2026-01-28-16h47m19s390.png")
 
@@ -20,7 +20,7 @@ ocr = PlakaOCR(languages=['tur', 'eng'], min_conf=10)
 print(f"✓ OCR hazır")
 
 # Detektör yükle
-from detector import PlakaDetector
+from plaka.detector import PlakaDetector
 detector = PlakaDetector(use_ocr=False)
 
 # Önce YOLO ile tespit

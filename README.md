@@ -35,8 +35,14 @@ plaka_tespit_uygulamasi/
 │   └── best.pt          <- Modelinizi buraya koyun
 ├── images/              <- Test resimleri için
 ├── results/             <- Sonuçlar için
-├── detector.py
-├── main.py
+├── plaka/
+│   ├── detector.py
+│   ├── ocr.py
+│   ├── character_detector.py
+│   └── gui.py
+├── scripts/             <- Test ve yardımcı scriptler
+├── docs/                <- Dokümantasyon
+├── main.py              <- Uygulama giriş noktası
 └── requirements.txt
 ```
 
@@ -90,10 +96,15 @@ python main.py
 ```
 plaka_tespit_uygulamasi/
 │
-├── main.py              # Ana uygulama (GUI)
-├── detector.py          # YOLO plaka tespit modülü
+├── main.py              # Ana uygulama giriş noktası
+├── plaka/gui.py          # GUI kodu
+├── plaka/detector.py     # YOLO plaka tespit modülü
+├── plaka/ocr.py          # OCR modülü
+├── plaka/character_detector.py  # Karakter tespiti
 ├── requirements.txt     # Python kütüphaneleri
 ├── README.md           # Bu dosya
+├── scripts/            # Test ve yardımcı scriptler
+├── docs/               # Ek dokümantasyon
 │
 ├── models/             # YOLO modelleri
 │   └── best.pt        # Eğitilmiş model
@@ -114,14 +125,14 @@ plaka_tespit_uygulamasi/
 - **Tkinter**: Grafik arayüz
 - **Pillow**: Resim gösterimi
 
-### detector.py
+### plaka/detector.py
 
 `PlakaDetector` sınıfı:
 - `load_model()`: YOLO modelini yükler
 - `detect_plate()`: Plaka tespiti yapar
 - `save_result()`: İşlenmiş resmi kaydeder
 
-### main.py
+### plaka/gui.py
 
 `PlakaTespitUygulamasi` sınıfı:
 - İki bölmeli görsel arayüz
@@ -133,7 +144,7 @@ plaka_tespit_uygulamasi/
 
 ### Güven Eşiği Ayarlama
 
-`detector.py` dosyasında:
+`plaka/detector.py` dosyasında:
 
 ```python
 result = detector.detect_plate(image_path, conf_threshold=0.25)
@@ -143,7 +154,7 @@ result = detector.detect_plate(image_path, conf_threshold=0.25)
 
 ### Çerçeve Rengi Değiştirme
 
-`detector.py` dosyasında çizim kısmını düzenleyin:
+`plaka/detector.py` dosyasında çizim kısmını düzenleyin:
 
 ```python
 # Yeşil çerçeve (varsayılan)

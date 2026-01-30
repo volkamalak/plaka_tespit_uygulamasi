@@ -6,7 +6,7 @@ OCR Debug Modu - Detaylı Tanısı
 import cv2
 import numpy as np
 from pathlib import Path
-from ocr import PlakaOCR
+from plaka.ocr import PlakaOCR
 
 def debug_ocr(image_path):
     """OCR'ı debug mode'da çalıştırır."""
@@ -79,8 +79,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         image_path = sys.argv[1]
     else:
-        print("Kullanım: python ocr_debug.py <resim_dosyasi>")
-        print("\nÖrnek: python ocr_debug.py plaka.jpg")
+        print("Kullanım: python scripts/ocr_debug.py <resim_dosyasi>")
+        print("\nÖrnek: python scripts/ocr_debug.py plaka.jpg")
         print("\nOr eğer images/ klasöründe resim varsa:")
         images = list(Path("images").glob("*.jpg")) + list(Path("images").glob("*.png"))
         if images:

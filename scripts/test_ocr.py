@@ -5,7 +5,7 @@ OCR Modülünün Test Scripti
 
 import cv2
 import numpy as np
-from ocr import PlakaOCR
+from plaka.ocr import PlakaOCR
 
 def test_plate_recognition():
     """OCR testleri yapıştır."""

@@ -8,7 +8,7 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
 from pathlib import Path
-from detector import PlakaDetector
+from plaka.detector import PlakaDetector
 
 
 class PlakaTespitUygulamasi:
