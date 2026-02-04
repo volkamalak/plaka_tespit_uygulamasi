@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Container detection model training script (YOLOv8).
-Dataset: datasets/Final_Container_Project.v7i.yolov8
+Konteyner ISO karakter okuma modeli (YOLOv8) eğitimi.
+Dataset: datasets/konteyner_karakter_okuma
 """
 
 from __future__ import annotations
@@ -12,30 +12,43 @@ from pathlib import Path
 from ultralytics import YOLO
 
 
+def _normalize_cache(value):
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"false", "0", "no", "off", "none"}:
+            return False
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
-    default_data = root / "runs" / "detect" / "konteyner_ROI" / "container.v2i.yolov8" / "data.yaml"
+    default_data = root / "datasets" / "konteyner_karakter_okuma" / "data.yaml"
+    default_copy = root / "models" / "konteyner_karakter_best.pt"
 
-    parser = argparse.ArgumentParser(description="Train YOLOv8 container detection model.")
+    parser = argparse.ArgumentParser(description="Train YOLOv8 container ISO character model.")
     parser.add_argument("--data", type=Path, default=default_data, help="Path to data.yaml")
     parser.add_argument("--model", type=str, default="yolov8n.pt", help="Base model weights")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=120, help="Number of training epochs")
     parser.add_argument("--imgsz", type=int, default=640, help="Image size")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--device", type=str, default="0", help="Device: 0,1,... or 'cpu'")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
-    parser.add_argument("--name", type=str, default="container_roi", help="Run name")
-    parser.add_argument("--project", type=Path, default=Path("runs/detect"), help="Project dir")
+    parser.add_argument("--name", type=str, default="konteyner_karakter", help="Run name")
+    parser.add_argument("--project", type=Path, default=Path("runs"), help="Project dir")
     parser.add_argument("--workers", type=int, default=8, help="Dataloader workers")
-    parser.add_argument("--cache", type=str, default="ram", help="Cache: ram, disk, or False")
+    parser.add_argument("--cache", type=str, default="False", help="Cache: ram, disk, True/False")
+    parser.add_argument("--copy-to", type=Path, default=default_copy, help="Copy best.pt to this path")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    cache_value = _normalize_cache(args.cache)
 
     print("=" * 70)
-    print("CONTAINER YOLO MODEL TRAINING")
+    print("KONTEYNER ISO KARAKTER MODELİ EĞİTİMİ")
     print("=" * 70)
 
     if not args.data.exists():
@@ -51,7 +64,8 @@ def main() -> None:
     print(f"  - Device: {args.device}")
     print(f"  - Patience: {args.patience}")
     print(f"  - Workers: {args.workers}")
-    print(f"  - Cache: {args.cache}")
+    print(f"  - Cache: {cache_value}")
+    print(f"  - Run name: {args.name}")
 
     model = YOLO(args.model)
     print("\n⏳ Training starts...")
@@ -69,20 +83,20 @@ def main() -> None:
         verbose=True,
         plots=True,
         workers=args.workers,
-        cache=args.cache,
+        cache=cache_value,
     )
 
     print("\n" + "=" * 70)
     print("✅ TRAINING COMPLETED")
     print("=" * 70)
 
-    best_model = Path(args.project) / args.name / "weights" / "best.pt"
-    if best_model.exists():
-        models_dir = Path("models")
-        models_dir.mkdir(exist_ok=True)
-        target = models_dir / "container_best2.pt"
-        target.write_bytes(best_model.read_bytes())
-        print(f"\n✓ Best model copied: {target}")
+    best_model = Path(args.project) / "detect" / args.name / "weights" / "best.pt"
+    if best_model.exists() and args.copy_to:
+        args.copy_to.parent.mkdir(parents=True, exist_ok=True)
+        args.copy_to.write_bytes(best_model.read_bytes())
+        print(f"\n✓ Best model copied: {args.copy_to}")
+    else:
+        print(f"\n⚠ Best model not found at: {best_model}")
 
     print("\n📊 Results:")
     print(f"  - mAP50: {results.results_dict.get('metrics/mAP50', 'N/A')}")

@@ -277,7 +277,7 @@ class PlakaTespitUygulamasi:
         cont_row = tk.Frame(cont_ops_body, bg=self.colors["surface"])
         cont_row.pack(fill=tk.X)
 
-        self.container_find_btn = styled_button(cont_row, "Konteyner ISO Bul", self.find_container_iso, "#1f6b63", state=tk.DISABLED)
+        self.container_find_btn = styled_button(cont_row, "Konteyner ISO Bul ve Oku", self.find_container_iso, "#1f6b63", state=tk.DISABLED)
         self.container_find_btn.pack(side=tk.LEFT, padx=(0, 8))
 
         self.container_read_btn = styled_button(cont_row, "Konteyner ISO Oku", self.read_container_iso, "#2454b5", state=tk.DISABLED)
@@ -784,23 +784,49 @@ class PlakaTespitUygulamasi:
             )
 
             if result['success'] and result['coordinates']:
-                x1, y1, x2, y2 = result['coordinates'][0]
-                conf = result['confidence'][0]
+                best_idx = max(range(len(result['confidence'])), key=lambda i: result['confidence'][i])
+                x1, y1, x2, y2 = result['coordinates'][best_idx]
+                conf = result['confidence'][best_idx]
 
                 self.container_crop = self.original_image[y1:y2, x1:x2]
                 self.container_coords = (x1, y1, x2, y2)
                 self.container_read_btn.config(state=tk.NORMAL)
 
-                self.container_result_value.config(text="ALAN BULUNDU", fg=self.colors["text"])
-                self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
-                self.container_result_status.config(text="✔", fg=self.colors["success"])
+                text, text_conf, model_data = self.container_detector.read_number_from_crop(
+                    self.container_crop,
+                    image_is_rgb=not self.images_are_bgr,
+                )
+
+                if text:
+                    display_text = model_data.get("formatted") if model_data else None
+                    if not display_text:
+                        display_text = text
+                    self.container_result_value.config(text=display_text, fg=self.colors["text"])
+                    check_ok = model_data.get("check_digit_ok") if model_data else None
+                    if check_ok is True:
+                        self.container_result_sub.config(text="✔ Valid Check Digit", fg=self.colors["success"])
+                        self.container_result_status.config(text="✔", fg=self.colors["success"])
+                    elif check_ok is False:
+                        self.container_result_sub.config(text="✖ Check Digit Hatalı", fg=self.colors["warning"])
+                        self.container_result_status.config(text="!", fg=self.colors["warning"])
+                    else:
+                        self.container_result_sub.config(
+                            text=f"Güven: {max(conf, text_conf):.1%}", fg=self.colors["muted"]
+                        )
+                        self.container_result_status.config(text="✔", fg=self.colors["success"])
+                    # ensure result section always shows the detected ISO text
+                    self.container_result_value.config(text=display_text, fg=self.colors["text"])
+                else:
+                    self.container_result_value.config(text="OKUMA BAŞARISIZ", fg=self.colors["warning"])
+                    self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
+                    self.container_result_status.config(text="!", fg=self.colors["warning"])
                 self._set_overlays([{
                     "bbox": (x1, y1, x2, y2),
                     "label": "Container ISO",
                     "color": (255, 140, 40),
                 }])
                 self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
-                self.status_label.config(text="Konteyner ISO alanı bulundu")
+                self.status_label.config(text="Konteyner ISO alanı bulundu ve okundu")
             else:
                 messagebox.showwarning("Uyarı", "Konteyner ISO alanı bulunamadı!")
                 self.status_label.config(text="Konteyner ISO alanı yok")
@@ -826,7 +852,10 @@ class PlakaTespitUygulamasi:
             )
 
             if text:
-                self.container_result_value.config(text=text, fg=self.colors["text"])
+                display_text = model_data.get("formatted") if model_data else None
+                if not display_text:
+                    display_text = text
+                self.container_result_value.config(text=display_text, fg=self.colors["text"])
                 check_ok = model_data.get("check_digit_ok") if model_data else None
                 if check_ok is True:
                     self.container_result_sub.config(text="✔ Valid Check Digit", fg=self.colors["success"])
@@ -837,7 +866,6 @@ class PlakaTespitUygulamasi:
                 else:
                     self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
                     self.container_result_status.config(text="✔", fg=self.colors["success"])
-                self.log_message(f"Konteyner ISO okundu: {text}")
             else:
                 self.container_result_value.config(text="OKUMA BAŞARISIZ", fg=self.colors["warning"])
                 self.container_result_sub.config(text="", fg=self.colors["muted"])
@@ -865,9 +893,10 @@ class PlakaTespitUygulamasi:
 
             result = self.seal_detector.detect_seal(self.original_image)
             if not result.get("success"):
-                self.seal_result_value.config(text="KONTROL BAŞARISIZ", fg=self.colors["warning"])
-                self.status_label.config(text="Mühür kontrol başarısız")
-                self.log_message("Mühür kontrol başarısız")
+                err = result.get("error") or "Bilinmeyen hata"
+                self.seal_result_value.config(text=f"YOK ({err})", fg=self.colors["warning"])
+                self.status_label.config(text=f"Mühür kontrol başarısız: {err}")
+                self.log_message(f"Mühür kontrol başarısız: {err}")
                 return
 
             present = result.get("present")

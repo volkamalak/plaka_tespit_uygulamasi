@@ -20,11 +20,15 @@ class ContainerNumberDetector:
 
     def __init__(
         self,
-        model_path="models/find_knt_ISO_best.pt",
+        model_path=None,
         use_character_model=True,
-        character_model_path="models/iso_karakter_okuma_best.pt",
+        character_model_path="models/konteyner_karakter_best.pt",
     ):
-        self.model_path = model_path
+        project_root = Path(__file__).resolve().parents[1]
+        default_path = project_root / "models" / "konteyner_ROI.pt"
+        fallback_path = project_root / "models" / "find_knt_ISO_best.pt"
+        self.model_path = Path(model_path) if model_path else default_path
+        self.fallback_path = fallback_path
         self.model = None
         self.use_character_model = use_character_model
         self.character_model_path = character_model_path
@@ -35,7 +39,11 @@ class ContainerNumberDetector:
     def load_model(self):
         try:
             if Path(self.model_path).exists():
-                self.model = YOLO(self.model_path)
+                self.model = YOLO(str(self.model_path))
+                print(f"Container number model loaded: {self.model_path}")
+            elif self.fallback_path.exists():
+                self.model_path = self.fallback_path
+                self.model = YOLO(str(self.model_path))
                 print(f"Container number model loaded: {self.model_path}")
             else:
                 print(f"WARN: Container number model not found: {self.model_path}")

@@ -15,11 +15,15 @@ class ContainerSealDetector:
 
     def __init__(
         self,
-        model_path="models/container_seal.pt",
+        model_path=None,
         present_labels=None,
         absent_labels=None,
     ):
-        self.model_path = model_path
+        project_root = Path(__file__).resolve().parents[1]
+        default_path = project_root / "models" / "muhur_bulma.pt"
+        fallback_path = project_root / "models" / "container_seal.pt"
+        self.model_path = Path(model_path) if model_path else default_path
+        self.fallback_path = fallback_path
         self.model = None
         self.present_labels = {s.lower() for s in (present_labels or ["seal", "present", "var"])}
         self.absent_labels = {s.lower() for s in (absent_labels or ["no_seal", "absent", "yok"])}
@@ -28,7 +32,11 @@ class ContainerSealDetector:
     def load_model(self):
         try:
             if Path(self.model_path).exists():
-                self.model = YOLO(self.model_path)
+                self.model = YOLO(str(self.model_path))
+                print(f"Container seal model loaded: {self.model_path}")
+            elif self.fallback_path.exists():
+                self.model_path = self.fallback_path
+                self.model = YOLO(str(self.model_path))
                 print(f"Container seal model loaded: {self.model_path}")
             else:
                 print(f"WARN: Container seal model not found: {self.model_path}")
