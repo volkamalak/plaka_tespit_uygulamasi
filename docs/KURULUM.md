@@ -162,7 +162,7 @@ dir models\best.pt
 Doğru yapıda olduğundan emin olun:
 
 ```
-plaka_tespit_uygulamasi/
+SANKO Port/
 ├── main.py
 ├── plaka/detector.py
 ├── requirements.txt

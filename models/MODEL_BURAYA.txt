@@ -23,7 +23,7 @@ Model Nasıl Oluşturulur?
 
 Model Konumu
 ------------
-📁 plaka_tespit_uygulamasi/
+📁 SANKO Port/
    └── 📁 models/
        └── 📄 best.pt  <-- Modelinizi buraya koyun
 

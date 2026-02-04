@@ -1,35 +1,33 @@
-# Plaka Tespit Uygulaması
+# SANKO Port
 
-Python ve Ultralytics YOLO kullanarak görüntülerde plaka tespiti ve okuma yapan, Tkinter tabanlı masaüstü uygulaması.
+Python ve Ultralytics YOLO kullanarak görüntülerde plaka tespiti ve **model tabanlı** okuma yapan, Tkinter tabanlı masaüstü uygulaması.
 
 ## Özellikler
 
 - 🚗 **YOLO tabanlı plaka tespiti** (eğitilmiş model ile)
-- 🔎 **İki okuma modu**: Character YOLO modeli + OCR (Tesseract + EasyOCR)
+- 🔤 **Character YOLO modeliyle okuma** (OCR yok)
 - 🎥 **Video desteği**: Video yükleme, oynatma ve stabil okuma
 - 📍 **Koordinat ve güven skorlarını gösterme**
 - ⏱️ **İşlem süresi ölçümü**
 - 💾 **Kırpılmış plaka görüntüsünü kaydetme**
-- 🇹🇷🇬🇧 **Türkçe ve İngilizce OCR desteği**
 
 ## Gereksinimler
 
 - Python 3.8+ (önerilen: 3.10+)
-- Tesseract OCR ikilisi (sistemde kurulu olmalı)
-- (Opsiyonel) CUDA destekli GPU (daha hızlı tespit ve OCR için)
+- (Opsiyonel) CUDA destekli GPU (daha hızlı tespit ve model okuma için)
 
 Python bağımlılıkları `requirements.txt` içinde listelenir.
 
 ## Kurulum (Adım Adım - Tüm İşletim Sistemleri)
 
-Kurulum adımları tüm sistemlerde aynıdır; sadece Python/Tesseract kurulumu ve paket yöneticisi farklıdır.
+Kurulum adımları tüm sistemlerde aynıdır; sadece Python kurulumu ve paket yöneticisi farklıdır.
 
 ### 0) Projeyi açın
 
 Terminali proje klasöründe açın:
 
 ```
-plaka_tespit_uygulamasi/
+SANKO Port/
 ```
 
 ### 1) Model dosyalarını yerleştirin
@@ -37,7 +35,7 @@ plaka_tespit_uygulamasi/
 ```
 models/
 ├── best.pt             # Zorunlu: plaka tespit modeli
-└── character_best.pt   # Opsiyonel: karakter (harf/rakam) modeli
+└── character_best.pt   # Opsiyonel: karakter (harf/rakam) okuma modeli
 ```
 
 ### 2) Windows (PowerShell / CMD)
@@ -57,20 +55,12 @@ py -3 -m venv .venv
 pip install -r requirements.txt
 ```
 
-4. **Tesseract OCR kurun**
-   - Kurulumdan sonra `C:\Program Files\Tesseract-OCR` klasörünü PATH'e ekleyin.
-5. **Kurulumu doğrulayın**
-
-```powershell
-tesseract --version
-```
-
 ### 3) macOS (Terminal)
 
-1. **Python ve Tesseract kurun** (Homebrew ile)
+1. **Python kurun** (Homebrew ile)
 
 ```bash
-brew install python tesseract
+brew install python
 ```
 
 2. **Sanal ortam oluşturun ve etkinleştirin**
@@ -84,12 +74,6 @@ source .venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-```
-
-4. **Kurulumu doğrulayın**
-
-```bash
-tesseract --version
 ```
 
 ### 4) Linux (Ubuntu / Debian)
@@ -98,7 +82,7 @@ tesseract --version
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip python3-tk tesseract-ocr
+sudo apt install -y python3 python3-venv python3-pip python3-tk
 ```
 
 2. **Sanal ortam oluşturun ve etkinleştirin**
@@ -112,12 +96,6 @@ source .venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-```
-
-4. **Kurulumu doğrulayın**
-
-```bash
-tesseract --version
 ```
 
 ### 5) Linux (Fedora)
@@ -125,7 +103,7 @@ tesseract --version
 1. **Sistem paketlerini kurun**
 
 ```bash
-sudo dnf install -y python3 python3-pip python3-tkinter tesseract
+sudo dnf install -y python3 python3-pip python3-tkinter
 ```
 
 2. **Sanal ortam oluşturun ve etkinleştirin**
@@ -141,18 +119,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. **Kurulumu doğrulayın**
-
-```bash
-tesseract --version
-```
-
 ### 6) Linux (Arch)
 
 1. **Sistem paketlerini kurun**
 
 ```bash
-sudo pacman -S --needed python python-pip tk tesseract
+sudo pacman -S --needed python python-pip tk
 ```
 
 2. **Sanal ortam oluşturun ve etkinleştirin**
@@ -168,14 +140,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. **Kurulumu doğrulayın**
-
-```bash
-tesseract --version
-```
-
-> GPU ile hızlandırma için `docs/GPU_OPTIMIZATION.md` dosyasına göz atın.
-
 ## Çalıştırma
 
 ```bash
@@ -185,7 +149,7 @@ python main.py
 Uygulama açıldığında:
 - **Resim Yükle** ile görüntü seçin.
 - **Plakayı Tespit Et** ile plaka bölgesini bulun.
-- **Metni Oku** ile modeli ve/veya OCR'yi çalıştırın.
+- **Metni Oku** ile model okumasını çalıştırın.
 - **Kaydet** ile kırpılmış plaka görüntüsünü diske yazın.
 
 ## Video Modu
@@ -195,12 +159,12 @@ Uygulama açıldığında:
 3) Uygulama belirli aralıklarla plaka tespiti yapar.
 4) Stabil okuma yakalandığında sonuç paneli güncellenir.
 
-> Video modunda okuma için "Model" ve/veya "OCR" anahtarları kullanılır.
+> Video modunda okuma için "Model" anahtarı kullanılır.
 
 ## Model Dosyaları Hakkında
 
 - `models/best.pt` **zorunludur**. Yoksa plaka tespiti yapılamaz.
-- `models/character_best.pt` **opsiyoneldir**. Yoksa karakter modeli devre dışı kalır; OCR yine çalışır.
+- `models/character_best.pt` **opsiyoneldir**. Yoksa metin okuma yapılamaz.
 
 Model yolunu değiştirmek için `plaka/detector.py` içindeki `model_path` ve `character_model_path` değerlerini güncelleyebilirsiniz.
 
@@ -209,11 +173,9 @@ Model yolunu değiştirmek için `plaka/detector.py` içindeki `model_path` ve `
 ```python
 from plaka.detector import PlakaDetector
 
-# Model + OCR ile tek resim
+# Model ile tek resim
 model = PlakaDetector(
     model_path="models/best.pt",
-    use_ocr=True,
-    ocr_languages=["tur", "eng"],
     use_character_model=True,
     character_model_path="models/character_best.pt",
 )
@@ -225,33 +187,28 @@ print(result["success"], result.get("plate_texts"))
 ## Yapılandırma İpuçları
 
 - **Güven eşiği**: `detect_plate(..., conf_threshold=0.25)`
-- **OCR dilleri**: `PlakaDetector(ocr_languages=["tur", "eng"])`
-- **Model/OCR anahtarları**: GUI üzerindeki "Model" ve "OCR" butonları ile aç/kapat
+- **Model anahtarı**: GUI üzerindeki "Model" butonu ile aç/kapat
 - **Video parametreleri**: `plaka/gui.py` içindeki `video_*` değişkenleri
 
 ## Çıktı ve Klasörler
 
 - `results/` : Kaydedilen çıktılar ve debug dosyaları
 - `results/debug_char/` : "Metni Oku" işlemi sırasında kaydedilen karakter debug görüntüleri
-- `./.easyocr/` : EasyOCR model cache klasörü (ilk çalıştırmada oluşur)
 
 ## Test ve Yardımcı Scriptler
 
 `scripts/` klasörü altında hızlı test ve yardımcı komutlar bulunur.
 Bazı scriptlerde sabit dosya yollarının güncellenmesi gerekir:
 - `scripts/test_detector.py`
-- `scripts/test_ocr.py`
-- `scripts/quick_test.py`
+- `scripts/full_test.py`
 
 ## Sık Görülen Sorunlar
 
 - **Model bulunamadı**: `models/best.pt` dosyasının var olduğundan emin olun.
-- **Tesseract bulunamadı**: `tesseract --version` çalışmıyorsa Tesseract kurulumu eksiktir.
-- **OCR yavaş**: GPU varsa PyTorch + CUDA ile hızlanır. GPU yoksa OCR'yi kapatabilirsiniz.
+- **Okuma yok**: `models/character_best.pt` yoksa metin okunamaz.
 
 ## Dokümantasyon
 
 Daha ayrıntılı notlar için:
 - `docs/KURULUM.md`
-- `docs/OCR_IMPROVEMENTS.md`
 - `docs/GPU_OPTIMIZATION.md`

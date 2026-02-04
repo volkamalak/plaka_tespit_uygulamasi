@@ -1,3 +1,4 @@
+print("RUNNING FILE:", __file__)
 #!/usr/bin/env python3
 """
 Karakter Seviyesi YOLO Modeli Eğitimi
@@ -15,7 +16,7 @@ def train_character_model():
     print("=" * 70)
     
     # Dataset yolu
-    dataset_path = Path("datasets/characters_new/plaka.v1i.yolov8/data.yaml")
+    dataset_path = Path("/home/bugra/datasets/merge_work/merged/data.yaml")
     
     if not dataset_path.exists():
         print(f"❌ Dataset bulunamadı: {dataset_path}")
@@ -81,7 +82,7 @@ def train_character_model():
     print(f"  - Precision: {results.results_dict.get('metrics/precision', 'N/A')}")
     print(f"  - Recall: {results.results_dict.get('metrics/recall', 'N/A')}")
     
-    print("\n🎉 Karakter modeli hazır! Şimdi OCR pipeline'ına entegre edebiliriz.")
+    print("\n🎉 Karakter modeli hazır! Şimdi okuma pipeline'ına entegre edebiliriz.")
 
 if __name__ == "__main__":
     train_character_model()

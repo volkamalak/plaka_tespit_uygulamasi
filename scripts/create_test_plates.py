@@ -66,4 +66,4 @@ if __name__ == "__main__":
     
     print("\n✅ Tümü oluşturuldu!")
     print("\nÖrnek test komutu:")
-    print("  python scripts/ocr_debug.py test_plates/33_ASA_608.jpg")
+    print("  python scripts/test_detector.py")

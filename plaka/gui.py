@@ -1,6 +1,6 @@
 """
-Plaka Tespit Uygulaması - Ana Dosya
-Tkinter GUI ile plaka tespit ve OCR uygulaması
+SANKO Port - Ana Dosya
+Tkinter GUI ile plaka tespit ve model tabanlı okuma uygulaması
 """
 
 import tkinter as tk
@@ -8,6 +8,8 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
 from .detector import PlakaDetector
+from .container_detector import ContainerNumberDetector
+from .seal_detector import ContainerSealDetector
 import time
 
 
@@ -17,41 +19,50 @@ class PlakaTespitUygulamasi:
     def __init__(self, root):
         """Uygulamayı başlatır"""
         self.root = root
-        self.root.title("Plaka Tespit ve Okuma Uygulaması")
-        self.root.geometry("1600x900")
+        self.root.title("SANKO Port")
+        self.root.geometry("1680x900")
 
         # Tema
         self.colors = {
-            "bg": "#f4f5f7",
-            "surface": "#ffffff",
-            "surface_alt": "#f0f2f5",
-            "primary": "#1f2a44",
-            "accent": "#2c7be5",
-            "accent_alt": "#00a389",
-            "danger": "#d64545",
-            "text": "#1c1f23",
-            "muted": "#6b7280",
-            "border": "#e4e7ec",
+            "bg": "#101418",
+            "surface": "#1a2028",
+            "surface_alt": "#222a34",
+            "primary": "#0f141a",
+            "accent": "#1e6fbf",
+            "accent_alt": "#25b26b",
+            "danger": "#d84a4a",
+            "text": "#eef2f6",
+            "muted": "#9aa4b2",
+            "border": "#2e3642",
+            "pill": "#1f2732",
+            "success": "#25b26b",
+            "warning": "#e6b84d",
+            "info": "#2f87ff",
         }
         self.fonts = {
             "title": ("Segoe UI", 20, "bold"),
             "subtitle": ("Segoe UI", 11, "bold"),
             "body": ("Segoe UI", 10),
             "mono": ("Consolas", 9),
+            "panel_title": ("Segoe UI", 12, "bold"),
+            "big_value": ("Segoe UI", 22, "bold"),
+            "big_value_alt": ("Segoe UI", 18, "bold"),
         }
 
         self.root.configure(bg=self.colors["bg"])
 
         # Değişkenler
-        self.ocr_languages = ['tur', 'eng']
-        self.detector = PlakaDetector(use_ocr=True, ocr_languages=self.ocr_languages)
+        self.detector = PlakaDetector()
+        self.container_detector = ContainerNumberDetector()
+        self.seal_detector = ContainerSealDetector()
         self.current_image_path = None
         self.original_image = None
         self.cropped_plate = None
         self.last_coords = None
+        self.container_crop = None
+        self.container_coords = None
         self.images_are_bgr = True
         self.model_enabled = tk.BooleanVar(value=True)
-        self.ocr_enabled = tk.BooleanVar(value=True)
         self.video_path = None
         self.video_cap = None
         self.video_running = False
@@ -64,6 +75,7 @@ class PlakaTespitUygulamasi:
         self.video_stable_required = 3
         self.video_stable_target_s = 1.0
         self.video_confidence_threshold = 0.65
+        self.overlay_boxes = []
 
         # GUI oluştur
         self.create_gui()
@@ -78,393 +90,335 @@ class PlakaTespitUygulamasi:
         header_inner = tk.Frame(header, bg=self.colors["primary"])
         header_inner.pack(fill=tk.BOTH, expand=True, padx=20)
 
+        brand = tk.Frame(header_inner, bg=self.colors["primary"])
+        brand.pack(side=tk.LEFT, pady=10)
+
+        title_block = tk.Frame(brand, bg=self.colors["primary"])
+        title_block.pack(side=tk.LEFT)
+
         title = tk.Label(
-            header_inner,
-            text="Plaka Tespit ve Okuma",
+            title_block,
+            text="SANKO Port",
             font=self.fonts["title"],
             bg=self.colors["primary"],
-            fg="white"
+            fg=self.colors["text"]
         )
-        title.pack(side=tk.LEFT, pady=12)
+        title.pack(anchor="w")
 
-        status_pill = tk.Frame(header_inner, bg=self.colors["primary"])
-        status_pill.pack(side=tk.RIGHT, pady=12)
-
-        self.model_status_label = tk.Label(
-            status_pill,
-            text="Model",
-            font=self.fonts["subtitle"],
+        subtitle = tk.Label(
+            title_block,
+            text="AI-Powered Reading & Control System",
+            font=("Segoe UI", 9),
             bg=self.colors["primary"],
-            fg="white"
+            fg=self.colors["muted"]
         )
-        self.model_status_label.pack(side=tk.LEFT, padx=8)
+        subtitle.pack(anchor="w")
 
-        self.ocr_status_label = tk.Label(
-            status_pill,
-            text="OCR",
-            font=self.fonts["subtitle"],
-            bg=self.colors["primary"],
-            fg="white"
+        header_right = tk.Frame(header_inner, bg=self.colors["primary"])
+        header_right.pack(side=tk.RIGHT, pady=12)
+
+        def pill(parent, text, dot_color):
+            frame = tk.Frame(parent, bg=self.colors["pill"], highlightthickness=1, highlightbackground=self.colors["border"])
+            label = tk.Label(frame, text=text, font=self.fonts["body"], bg=self.colors["pill"], fg=self.colors["text"])
+            label.pack(side=tk.LEFT, padx=(10, 6), pady=6)
+            dot = tk.Label(frame, text="●", font=self.fonts["body"], bg=self.colors["pill"], fg=dot_color)
+            dot.pack(side=tk.LEFT, padx=(0, 10))
+            return frame, label, dot
+
+        self.system_pill, self.system_pill_label, self.system_pill_dot = pill(
+            header_right, "System", self.colors["success"]
         )
-        self.ocr_status_label.pack(side=tk.LEFT, padx=8)
+        self.system_pill.pack(side=tk.LEFT, padx=6)
 
-        # ===== KONTROL PANELİ =====
-        ctrl_frame = tk.Frame(
-            self.root,
+        self.status_pill, self.status_pill_label, self.status_pill_dot = pill(
+            header_right, "Status: Stable", self.colors["success"]
+        )
+        self.status_pill.pack(side=tk.LEFT, padx=6)
+
+        notif = tk.Label(header_right, text="🔔", font=("Segoe UI", 12), bg=self.colors["primary"], fg=self.colors["muted"])
+        notif.pack(side=tk.LEFT, padx=10)
+
+        # ===== ANA İÇERİK =====
+        main_frame = tk.Frame(self.root, bg=self.colors["bg"])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=12)
+
+        left_col = tk.Frame(main_frame, bg=self.colors["bg"])
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+
+        right_col = tk.Frame(main_frame, bg=self.colors["bg"], width=440)
+        right_col.pack(side=tk.LEFT, fill=tk.Y)
+        right_col.pack_propagate(False)
+
+        # ===== VIDEO PANEL =====
+        video_panel = tk.Frame(left_col, bg=self.colors["surface"], highlightthickness=1, highlightbackground=self.colors["border"])
+        video_panel.pack(fill=tk.BOTH, expand=True)
+
+        video_header = tk.Frame(video_panel, bg=self.colors["surface"])
+        video_header.pack(fill=tk.X, padx=12, pady=(10, 0))
+
+        video_title = tk.Label(
+            video_header,
+            text="VIDEO",
+            font=self.fonts["panel_title"],
             bg=self.colors["surface"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"],
+            fg=self.colors["text"]
         )
-        ctrl_frame.pack(fill=tk.X, padx=16, pady=(12, 8))
+        video_title.pack(side=tk.LEFT)
 
-        btn_frame = tk.Frame(ctrl_frame, bg=self.colors["surface"])
-        btn_frame.pack(fill=tk.X, padx=12, pady=10)
-
-        self.load_btn = tk.Button(
-            btn_frame,
-            text="Resim Yükle",
-            command=self.load_image,
-            font=self.fonts["subtitle"],
-            bg=self.colors["accent"],
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
-            relief=tk.FLAT
-        )
-        self.load_btn.pack(side=tk.LEFT, padx=5)
-
-        self.show_btn = tk.Button(
-            btn_frame,
-            text="Plakayı Tespit Et",
-            command=self.show_plate,
-            font=self.fonts["subtitle"],
-            bg="#5b6bfe",
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
-            relief=tk.FLAT,
-            state=tk.DISABLED
-        )
-        self.show_btn.pack(side=tk.LEFT, padx=5)
-
-        self.read_btn = tk.Button(
-            btn_frame,
-            text="Metni Oku",
-            command=self.read_plate,
-            font=self.fonts["subtitle"],
-            bg=self.colors["danger"],
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
-            relief=tk.FLAT,
-            state=tk.DISABLED
-        )
-        self.read_btn.pack(side=tk.LEFT, padx=5)
-
-        self.save_btn = tk.Button(
-            btn_frame,
-            text="Kaydet",
-            command=self.save_result,
-            font=self.fonts["subtitle"],
-            bg=self.colors["accent_alt"],
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
-            relief=tk.FLAT,
-            state=tk.DISABLED
-        )
-        self.save_btn.pack(side=tk.LEFT, padx=5)
-
-        self.video_btn = tk.Button(
-            btn_frame,
-            text="Video Yükle",
-            command=self.load_video,
-            font=self.fonts["subtitle"],
-            bg="#374151",
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
-            relief=tk.FLAT
-        )
-        self.video_btn.pack(side=tk.LEFT, padx=5)
+        video_ctrl = tk.Frame(video_header, bg=self.colors["surface"])
+        video_ctrl.pack(side=tk.RIGHT)
 
         self.play_btn = tk.Button(
-            btn_frame,
+            video_ctrl,
             text="Oynat",
             command=self.toggle_video,
-            font=self.fonts["subtitle"],
-            bg="#111827",
-            fg='white',
-            padx=15,
-            pady=8,
-            cursor='hand2',
+            font=self.fonts["body"],
+            bg="#2d3642",
+            fg="white",
+            padx=10,
+            pady=4,
+            cursor="hand2",
             relief=tk.FLAT,
+            activebackground="#2d3642",
+            activeforeground="white",
             state=tk.DISABLED
         )
-        self.play_btn.pack(side=tk.LEFT, padx=5)
+        self.play_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
-        # Switch alanı
-        switch_frame = tk.Frame(btn_frame, bg=self.colors["surface"])
-        switch_frame.pack(side=tk.LEFT, padx=15)
+        video_ctrl_label = tk.Label(video_ctrl, text="—   ✕", font=("Segoe UI", 10), bg=self.colors["surface"], fg=self.colors["muted"])
+        video_ctrl_label.pack(side=tk.RIGHT)
 
-        self.model_switch = tk.Checkbutton(
-            switch_frame,
-            text="Model",
-            variable=self.model_enabled,
-            command=self.toggle_model,
-            font=self.fonts["subtitle"],
-            bg=self.colors["surface"],
-            fg=self.colors["text"],
-            selectcolor=self.colors["surface_alt"],
-            indicatoron=False,
-            width=10,
-            relief=tk.GROOVE,
-            cursor='hand2'
+        video_body = tk.Frame(video_panel, bg=self.colors["surface"])
+        video_body.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        self.original_canvas = tk.Canvas(video_body, bg="#0f141a", highlightthickness=1, highlightbackground=self.colors["border"])
+        self.original_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # ===== LOG PANEL =====
+        log_panel = tk.Frame(left_col, bg=self.colors["surface"], highlightthickness=1, highlightbackground=self.colors["border"])
+        log_panel.pack(fill=tk.X, pady=(12, 0))
+
+        log_header = tk.Frame(log_panel, bg=self.colors["surface"])
+        log_header.pack(fill=tk.X, padx=12, pady=(10, 0))
+
+        log_title = tk.Label(log_header, text="LOG", font=self.fonts["panel_title"], bg=self.colors["surface"], fg=self.colors["text"])
+        log_title.pack(side=tk.LEFT)
+
+        log_body = tk.Frame(log_panel, bg=self.colors["surface"])
+        log_body.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+
+        log_scroll = tk.Scrollbar(log_body)
+        log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.log_text = tk.Text(
+            log_body,
+            height=6,
+            font=self.fonts["mono"],
+            bg="#11161d",
+            fg=self.colors["muted"],
+            insertbackground=self.colors["text"],
+            yscrollcommand=log_scroll.set,
+            relief=tk.FLAT,
+            wrap=tk.WORD
         )
-        self.model_switch.pack(side=tk.LEFT, padx=5)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        log_scroll.config(command=self.log_text.yview)
+        self.log_text.insert("1.0", "System ready...\n")
+        self.log_text.config(state=tk.DISABLED)
 
-        self.ocr_switch = tk.Checkbutton(
-            switch_frame,
-            text="OCR",
-            variable=self.ocr_enabled,
-            command=self.toggle_ocr,
-            font=self.fonts["subtitle"],
+        # ===== RIGHT COLUMN CARDS =====
+        def card(parent, title_text):
+            frame = tk.Frame(parent, bg=self.colors["surface"], highlightthickness=1, highlightbackground=self.colors["border"])
+            title = tk.Label(frame, text=title_text, font=self.fonts["panel_title"], bg=self.colors["surface"], fg=self.colors["text"])
+            title.pack(anchor="w", padx=12, pady=(10, 6))
+            body = tk.Frame(frame, bg=self.colors["surface"])
+            body.pack(fill=tk.X, padx=12, pady=(0, 12))
+            return frame, body
+
+        # PLAKA ISLEMLERI
+        plate_ops, plate_ops_body = card(right_col, "PLAKA İŞLEMLERİ")
+        plate_ops.pack(fill=tk.X, pady=(0, 12))
+
+        btn_row = tk.Frame(plate_ops_body, bg=self.colors["surface"])
+        btn_row.pack(fill=tk.X)
+
+        def styled_button(parent, text, command, bg, state=tk.NORMAL):
+            return tk.Button(
+                parent,
+                text=text,
+                command=command,
+                font=self.fonts["body"],
+                bg=bg,
+                fg="white",
+                padx=12,
+                pady=8,
+                cursor="hand2",
+                relief=tk.FLAT,
+                activebackground=bg,
+                activeforeground="white",
+                state=state
+            )
+
+        self.load_btn = styled_button(btn_row, "Görüntü Yükle", self.load_image, self.colors["accent"])
+        self.load_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.video_btn = styled_button(btn_row, "Kamera Başlat", self.load_video, "#3a4454")
+        self.video_btn.pack(side=tk.LEFT, padx=8)
+
+        self.detect_read_btn = styled_button(btn_row, "Plaka Tespit & Oku", self.detect_and_read_plate, self.colors["info"], state=tk.DISABLED)
+        self.detect_read_btn.pack(side=tk.LEFT, padx=(8, 0))
+
+        # play button moved to video header for visibility
+
+        # KONTEYNER ISLEMLERI
+        cont_ops, cont_ops_body = card(right_col, "KONTEYNER İŞLEMLERİ")
+        cont_ops.pack(fill=tk.X, pady=(0, 12))
+
+        cont_row = tk.Frame(cont_ops_body, bg=self.colors["surface"])
+        cont_row.pack(fill=tk.X)
+
+        self.container_find_btn = styled_button(cont_row, "Konteyner ISO Bul", self.find_container_iso, "#1f6b63", state=tk.DISABLED)
+        self.container_find_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.container_read_btn = styled_button(cont_row, "Konteyner ISO Oku", self.read_container_iso, "#2454b5", state=tk.DISABLED)
+        self.container_read_btn.pack(side=tk.LEFT, padx=8)
+
+        self.seal_btn = styled_button(cont_row, "Mühür Kontrol Et", self.check_container_seal, "#7c2d12", state=tk.DISABLED)
+        self.seal_btn.pack(side=tk.LEFT, padx=(8, 0))
+
+        # PLAKA SONUCU
+        plate_result, plate_result_body = card(right_col, "PLAKA SONUCU")
+        plate_result.pack(fill=tk.X, pady=(0, 12))
+
+        plate_value_row = tk.Frame(plate_result_body, bg=self.colors["surface"])
+        plate_value_row.pack(fill=tk.X)
+
+        self.plate_result_value = tk.Label(
+            plate_value_row,
+            text="--",
+            font=self.fonts["big_value"],
             bg=self.colors["surface"],
-            fg=self.colors["text"],
-            selectcolor=self.colors["surface_alt"],
-            indicatoron=False,
-            width=10,
-            relief=tk.GROOVE,
-            cursor='hand2'
+            fg=self.colors["text"]
         )
-        self.ocr_switch.pack(side=tk.LEFT, padx=5)
+        self.plate_result_value.pack(side=tk.LEFT)
 
-        status_frame = tk.Frame(btn_frame, bg=self.colors["surface"])
-        status_frame.pack(side=tk.RIGHT, padx=10)
+        self.plate_result_status = tk.Label(
+            plate_value_row,
+            text="○",
+            font=("Segoe UI", 18, "bold"),
+            bg=self.colors["surface"],
+            fg=self.colors["muted"]
+        )
+        self.plate_result_status.pack(side=tk.RIGHT, padx=6)
 
-        self.status_hint = tk.Label(
-            status_frame,
-            text="Hazır",
+        # KONTEYNER ISO SONUCU
+        cont_result, cont_result_body = card(right_col, "KONTEYNER ISO SONUCU")
+        cont_result.pack(fill=tk.X, pady=(0, 12))
+
+        self.container_result_value = tk.Label(
+            cont_result_body,
+            text="--",
+            font=self.fonts["big_value_alt"],
+            bg=self.colors["surface"],
+            fg=self.colors["text"]
+        )
+        self.container_result_value.pack(anchor="w")
+
+        self.container_result_sub = tk.Label(
+            cont_result_body,
+            text="",
             font=self.fonts["body"],
             bg=self.colors["surface"],
             fg=self.colors["muted"]
         )
-        self.status_hint.pack(side=tk.RIGHT)
+        self.container_result_sub.pack(anchor="w", pady=(4, 0))
 
-        # ===== ANA İÇERİK =====
-        main_frame = tk.Frame(self.root, bg=self.colors["bg"])
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
-
-        # SOL: Orijinal Resim
-        left_frame = tk.Frame(
-            main_frame,
+        self.container_result_status = tk.Label(
+            cont_result_body,
+            text="○",
+            font=("Segoe UI", 16, "bold"),
             bg=self.colors["surface"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"]
+            fg=self.colors["muted"]
         )
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        self.container_result_status.pack(anchor="e")
 
-        left_title = tk.Label(
-            left_frame,
-            text="Orijinal Resim",
-            font=self.fonts["subtitle"],
+        # MÜHÜR KONTROLÜ
+        seal_result, seal_result_body = card(right_col, "MÜHÜR KONTROLÜ")
+        seal_result.pack(fill=tk.X)
+
+        self.seal_result_value = tk.Label(
+            seal_result_body,
+            text="--",
+            font=self.fonts["big_value_alt"],
             bg=self.colors["surface"],
-            fg=self.colors["text"],
-            pady=10
+            fg=self.colors["muted"]
         )
-        left_title.pack(fill=tk.X)
+        self.seal_result_value.pack(anchor="w")
 
-        self.original_canvas = tk.Canvas(left_frame, bg=self.colors["surface_alt"], highlightthickness=0)
-        self.original_canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        # Hidden plate canvas for preview (kept for existing flow)
+        self.plate_canvas = tk.Canvas(right_col, width=1, height=1, highlightthickness=0, bg=self.colors["bg"])
+        self.plate_canvas.place_forget()
 
-        # ORTADA: Tespit Edilen Plaka
-        mid_frame = tk.Frame(
-            main_frame,
-            bg=self.colors["surface"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"]
-        )
-        mid_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(6, 6))
-
-        mid_title = tk.Label(
-            mid_frame,
-            text="Tespit Edilen Plaka",
-            font=self.fonts["subtitle"],
-            bg=self.colors["surface"],
-            fg=self.colors["text"],
-            pady=10,
-            padx=10
-        )
-        mid_title.pack(fill=tk.X)
-
-        plate_container = tk.Frame(mid_frame, bg=self.colors["surface_alt"])
-        plate_container.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-
-        self.plate_canvas = tk.Canvas(
-            plate_container,
-            bg='white',
-            highlightthickness=1,
-            highlightbackground=self.colors["border"],
-            width=220,
-            height=120
-        )
-        self.plate_canvas.pack(expand=True)
-
-        # SAĞ: Sonuçlar
-        right_frame = tk.Frame(
-            main_frame,
-            bg=self.colors["surface"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"]
-        )
-        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0))
-
-        right_title = tk.Label(
-            right_frame,
-            text="Okunan Sonuçlar",
-            font=self.fonts["subtitle"],
-            bg=self.colors["surface"],
-            fg=self.colors["text"],
-            pady=10
-        )
-        right_title.pack(fill=tk.X)
-
-        results_frame = tk.Frame(right_frame, bg=self.colors["surface"])
-        results_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        results_frame.grid_columnconfigure(0, weight=1)
-        results_frame.grid_columnconfigure(1, weight=1)
-
-        # MODEL SONUÇLARI
-        model_panel = tk.Frame(
-            results_frame,
-            bg=self.colors["surface_alt"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"]
-        )
-        model_panel.grid(row=0, column=0, sticky='nsew', padx=(0, 5), pady=0)
-
-        model_title = tk.Label(
-            model_panel,
-            text="Model",
-            font=self.fonts["subtitle"],
-            bg=self.colors["surface_alt"],
-            fg=self.colors["text"],
-            pady=5
-        )
-        model_title.pack(fill=tk.X)
-
-        model_scroll = tk.Frame(model_panel, bg=self.colors["surface_alt"])
-        model_scroll.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
-
-        model_sb = tk.Scrollbar(model_scroll)
-        model_sb.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.model_text = tk.Text(
-            model_scroll,
-            height=15,
-            font=self.fonts["mono"],
-            bg='white',
-            fg=self.colors["text"],
-            yscrollcommand=model_sb.set,
-            wrap=tk.WORD
-        )
-        self.model_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        model_sb.config(command=self.model_text.yview)
-        self.model_text.insert('1.0', 'Henüz işlem yapılmadı.')
-        self.model_text.config(state=tk.DISABLED)
-
-        # OCR SONUÇLARI
-        ocr_panel = tk.Frame(
-            results_frame,
-            bg=self.colors["surface_alt"],
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=self.colors["border"]
-        )
-        ocr_panel.grid(row=0, column=1, sticky='nsew', padx=(5, 0), pady=0)
-
-        ocr_title = tk.Label(
-            ocr_panel,
-            text="OCR",
-            font=self.fonts["subtitle"],
-            bg=self.colors["surface_alt"],
-            fg=self.colors["text"],
-            pady=5
-        )
-        ocr_title.pack(fill=tk.X)
-
-        ocr_scroll = tk.Frame(ocr_panel, bg=self.colors["surface_alt"])
-        ocr_scroll.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
-
-        ocr_sb = tk.Scrollbar(ocr_scroll)
-        ocr_sb.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.ocr_text = tk.Text(
-            ocr_scroll,
-            height=15,
-            font=self.fonts["mono"],
-            bg='white',
-            fg=self.colors["text"],
-            yscrollcommand=ocr_sb.set,
-            wrap=tk.WORD
-        )
-        self.ocr_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ocr_sb.config(command=self.ocr_text.yview)
-        self.ocr_text.insert('1.0', 'Henüz işlem yapılmadı.')
-        self.ocr_text.config(state=tk.DISABLED)
-
-        # ===== ALT DURUM BARI =====
-        footer = tk.Frame(self.root, bg=self.colors["primary"], height=40)
-        footer.pack(fill=tk.X)
-        footer.pack_propagate(False)
-
-        self.status_label = tk.Label(
-            footer,
+        # Status labels
+        self.status_hint = tk.Label(
+            header_right,
             text="Hazır",
             font=self.fonts["body"],
             bg=self.colors["primary"],
-            fg='white',
-            anchor='w'
+            fg=self.colors["muted"]
         )
-        self.status_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        self.status_hint.pack(side=tk.LEFT, padx=10)
+
+        self.status_label = tk.Label(
+            header_right,
+            text="",
+            font=self.fonts["body"],
+            bg=self.colors["primary"],
+            fg=self.colors["muted"]
+        )
+        self.status_label.pack(side=tk.LEFT, padx=10)
+
         self.update_status_labels()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def update_status_labels(self):
-        """Model/OCR durumlarını günceller"""
-        model_ok = self.detector.model is not None
-        ocr_ok = self.detector.ocr is not None
+        """Model durumunu günceller"""
+        model_ok = self.detector.model is not None and self.model_enabled.get()
+        if model_ok:
+            self.status_pill_label.config(text="Status: Stable")
+            self.status_pill_dot.config(fg=self.colors["success"])
+        else:
+            self.status_pill_label.config(text="Status: Model Off")
+            self.status_pill_dot.config(fg=self.colors["warning"])
 
-        model_status = "Model: Açık" if model_ok else "Model: Yok"
-        if not self.model_enabled.get():
-            model_status = "Model: Kapalı"
-        self.model_status_label.config(text=model_status, fg='white')
+    def log_message(self, message):
+        """Log paneline mesaj ekler."""
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert("1.0", f"{ts} - {message}\n")
+        self.log_text.config(state=tk.DISABLED)
 
-        ocr_status = "OCR: Açık" if ocr_ok else "OCR: Yok"
-        if not self.ocr_enabled.get():
-            ocr_status = "OCR: Kapalı"
-        self.ocr_status_label.config(text=ocr_status, fg='white')
+    def _set_overlays(self, overlays):
+        self.overlay_boxes = overlays or []
+
+    def _draw_overlays(self, image):
+        if image is None or not self.overlay_boxes:
+            return image
+        overlay = image.copy()
+        for item in self.overlay_boxes:
+            x1, y1, x2, y2 = item.get("bbox", (0, 0, 0, 0))
+            color = item.get("color", (0, 200, 255))
+            label = item.get("label", "")
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+            if label:
+                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                cv2.rectangle(overlay, (x1, y1 - th - 8), (x1 + tw, y1), color, -1)
+                cv2.putText(overlay, label, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        return overlay
 
     def toggle_model(self):
         """Character model aç/kapat"""
         self.detector.use_character_model = self.model_enabled.get()
-        self.update_status_labels()
-
-    def toggle_ocr(self):
-        """OCR aç/kapat"""
-        self.detector.use_ocr = self.ocr_enabled.get()
-        if self.detector.use_ocr and self.detector.ocr is None:
-            self.detector.load_ocr(self.ocr_languages)
         self.update_status_labels()
 
     def load_image(self):
@@ -482,11 +436,19 @@ class PlakaTespitUygulamasi:
                 self.original_image = image
 
                 self.display_image(image, self.original_canvas, bgr_to_rgb=True)
-                self.show_btn.config(state=tk.NORMAL)
+                self.detect_read_btn.config(state=tk.NORMAL)
+                self.container_find_btn.config(state=tk.NORMAL)
+                self.container_read_btn.config(state=tk.DISABLED)
+                self.seal_btn.config(state=tk.NORMAL)
                 self.plate_canvas.delete("all")
                 self.reset_results()
+                self.reset_container_results()
+                self.container_crop = None
+                self.container_coords = None
+                self._set_overlays([])
                 self.status_label.config(text="Resim yüklendi")
                 self.status_hint.config(text="Görüntü hazır")
+                self.log_message("Görüntü yüklendi")
 
             except Exception as e:
                 messagebox.showerror("Hata", f"Resim yüklenemedi: {str(e)}")
@@ -517,16 +479,21 @@ class PlakaTespitUygulamasi:
 
         self.video_path = file_path
         self.video_cap = cap
-        self.video_running = False
+        self.video_running = True
         self.video_frame_index = 0
-        self.play_btn.config(state=tk.NORMAL, text="Oynat")
+        self.play_btn.config(state=tk.NORMAL, text="Durdur")
 
         ok, frame = cap.read()
         if ok:
             self.original_image = frame
             self.display_image(frame, self.original_canvas, bgr_to_rgb=True)
             self.status_label.config(text="Video yüklendi")
-            self.status_hint.config(text="Oynatmak için başlat")
+            self.status_hint.config(text="Video akışı başladı")
+            self.container_find_btn.config(state=tk.NORMAL)
+            self.container_read_btn.config(state=tk.DISABLED)
+            self.seal_btn.config(state=tk.NORMAL)
+            self.update_video_frame()
+            self.log_message("Video yüklendi ve akış başladı")
         else:
             messagebox.showerror("Hata", "Video ilk kare okunamadı")
             self.stop_video()
@@ -537,6 +504,8 @@ class PlakaTespitUygulamasi:
             return
         self.video_running = not self.video_running
         self.play_btn.config(text="Durdur" if self.video_running else "Oynat")
+        self.status_label.config(text="Video oynatılıyor" if self.video_running else "Video durduruldu")
+        self.log_message("Video oynatıldı" if self.video_running else "Video durduruldu")
         if self.video_running:
             self.update_video_frame()
 
@@ -550,6 +519,7 @@ class PlakaTespitUygulamasi:
             self.video_running = False
             self.play_btn.config(text="Oynat")
             self.status_label.config(text="Video bitti")
+            self.log_message("Video bitti")
             return
 
         self.original_image = frame
@@ -563,9 +533,14 @@ class PlakaTespitUygulamasi:
                     x1, y1, x2, y2 = result['coordinates'][0]
                     self.cropped_plate = frame[y1:y2, x1:x2]
                     self.last_coords = (x1, y1, x2, y2)
+                    self._set_overlays([{
+                        "bbox": (x1, y1, x2, y2),
+                        "label": "License Plate",
+                        "color": (0, 200, 90),
+                    }])
                     self.display_image(self.cropped_plate, self.plate_canvas, bgr_to_rgb=True)
-                    self.read_btn.config(state=tk.NORMAL)
-                    if self.detector.use_character_model or self.detector.use_ocr:
+                    self.detect_read_btn.config(state=tk.NORMAL)
+                    if self.detector.use_character_model:
                         self.process_video_read()
 
         self.video_frame_index += 1
@@ -576,7 +551,7 @@ class PlakaTespitUygulamasi:
         if self.cropped_plate is None:
             return
 
-        _, _, model_data, ocr_data = self.detector.read_plate_text(
+        _, _, model_data = self.detector.read_plate_text(
             self.cropped_plate,
             image_is_rgb=not self.images_are_bgr,
             full_image=self.original_image,
@@ -587,17 +562,9 @@ class PlakaTespitUygulamasi:
 
         candidate = ""
         candidate_conf = 0.0
-        candidate_source = None
         if self.detector.use_character_model and model_data and model_data.get("success"):
             candidate = model_data.get("text", "")
             candidate_conf = float(model_data.get("confidence", 0.0) or 0.0)
-            candidate_source = "model"
-        if not candidate and self.detector.use_ocr and ocr_data:
-            best = ocr_data.get("best") if isinstance(ocr_data, dict) else ocr_data
-            if best and best.get("success"):
-                candidate = best.get("text", "")
-                candidate_conf = float(best.get("confidence", 0.0) or 0.0)
-                candidate_source = "ocr"
 
         if not candidate:
             self.video_stable_text = None
@@ -625,45 +592,14 @@ class PlakaTespitUygulamasi:
         # Stable result: update UI
         self.video_last_shown = candidate
         if is_high_conf and not is_stable:
-            source_label = "Model" if candidate_source == "model" else "OCR"
-            self.status_hint.config(
-                text=f"Yüksek güven ({source_label}): {candidate_conf:.0%}"
-            )
+            self.status_hint.config(text=f"Yüksek güven (Model): {candidate_conf:.0%}")
         else:
             self.status_hint.config(text="Okuma sabitlenmiş")
 
-        model_result = "Model kapalı"
         if self.detector.use_character_model and model_data and model_data.get("success"):
-            model_result = "Model Sonucu\n" + ("─" * 25) + "\n"
-            model_result += f"Plaka: {model_data['text']}\n"
-            model_result += f"Güven: {model_data['confidence']:.1%}\n"
-            model_result += f"Karakter: {len(model_data['characters'])}\n"
-            model_result += f"Süre: {model_data['processing_time']:.3f}s"
-
-        ocr_result = "OCR kapalı"
-        if self.detector.use_ocr and ocr_data:
-            best = ocr_data.get("best") if isinstance(ocr_data, dict) else ocr_data
-            bgr = ocr_data.get("bgr") if isinstance(ocr_data, dict) else None
-            gray = ocr_data.get("gray") if isinstance(ocr_data, dict) else None
-            if best and best.get("success"):
-                ocr_result = "OCR Sonucu\n" + ("─" * 25) + "\n"
-                ocr_result += f"En İyi: {best['text']} ({best['confidence']:.1%})\n"
-            else:
-                ocr_result = "OCR\nBaşarısız"
-            if bgr:
-                ocr_result += f"BGR: {bgr.get('text', '')} ({bgr.get('confidence', 0.0):.1%})\n"
-            if gray:
-                ocr_result += f"GRAY: {gray.get('text', '')} ({gray.get('confidence', 0.0):.1%})"
-
-        self.model_text.config(state=tk.NORMAL)
-        self.model_text.delete('1.0', tk.END)
-        self.model_text.insert('1.0', model_result)
-        self.model_text.config(state=tk.DISABLED)
-
-        self.ocr_text.config(state=tk.NORMAL)
-        self.ocr_text.delete('1.0', tk.END)
-        self.ocr_text.insert('1.0', ocr_result)
-        self.ocr_text.config(state=tk.DISABLED)
+            self.plate_result_value.config(text=model_data.get("text", "--"))
+            self.plate_result_status.config(text="✔", fg=self.colors["success"])
+            self.log_message(f"Plaka okundu: {model_data.get('text', '')}")
 
     def stop_video(self):
         """Video kaynağını kapat"""
@@ -678,6 +614,7 @@ class PlakaTespitUygulamasi:
         self.video_stable_text = None
         self.video_stable_count = 0
         self.video_last_shown = None
+        self.status_label.config(text="Video durduruldu")
         self.play_btn.config(state=tk.DISABLED, text="Oynat")
 
     def on_close(self):
@@ -687,12 +624,17 @@ class PlakaTespitUygulamasi:
 
     def show_plate(self):
         """Plakayı tespit et"""
-        if not self.current_image_path:
-            messagebox.showwarning("Uyarı", "Resim yükleyin!")
-            return
-
         if not self.detector.model:
-            messagebox.showerror("Hata", "Model yüklü değil!")
+            # Lazy reload in case model was added after GUI start
+            try:
+                self.detector.load_model()
+            except Exception:
+                pass
+        if not self.detector.model:
+            messagebox.showerror(
+                "Hata",
+                f"Model yüklü değil! Beklenen dosya: {self.detector.model_path}"
+            )
             return
 
         try:
@@ -700,22 +642,40 @@ class PlakaTespitUygulamasi:
             self.root.update()
 
             start = time.time()
-            result = self.detector.detect_plate(self.current_image_path, read_text=False)
+            if self.current_image_path:
+                result = self.detector.detect_plate(self.current_image_path, read_text=False)
+            elif self.original_image is not None:
+                result = self.detector.detect_plate_in_image(self.original_image, read_text=False)
+            else:
+                messagebox.showwarning("Uyarı", "Önce görüntü veya video yükleyin!")
+                return
 
             if result['success'] and result['coordinates']:
-                x1, y1, x2, y2 = result['coordinates'][0]
-                conf = result['confidence'][0]
+                areas = []
+                for idx, (x1, y1, x2, y2) in enumerate(result['coordinates']):
+                    area = max(0, x2 - x1) * max(0, y2 - y1)
+                    areas.append((area, idx))
+                _, best_idx = min(areas, key=lambda x: x[0])
+                x1, y1, x2, y2 = result['coordinates'][best_idx]
+                conf = result['confidence'][best_idx]
 
                 self.cropped_plate = self.original_image[y1:y2, x1:x2]
                 self.last_coords = (x1, y1, x2, y2)
+                self._set_overlays([{
+                    "bbox": (x1, y1, x2, y2),
+                    "label": "License Plate",
+                    "color": (0, 200, 90),
+                }])
+                self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
                 self.display_image(self.cropped_plate, self.plate_canvas, bgr_to_rgb=True)
 
                 elapsed = time.time() - start
                 self.status_label.config(
                     text=f"Plaka tespit edildi ({conf:.1%}) • {elapsed:.2f}s"
                 )
-                self.read_btn.config(state=tk.NORMAL)
+                self.detect_read_btn.config(state=tk.NORMAL)
                 self.reset_results()
+                self.log_message("Plaka tespit edildi")
 
             else:
                 messagebox.showwarning("Uyarı", "Plaka tespit edilemedi!")
@@ -724,8 +684,14 @@ class PlakaTespitUygulamasi:
         except Exception as e:
             messagebox.showerror("Hata", f"Tespit hatası: {str(e)}")
 
+    def detect_and_read_plate(self):
+        """Plaka tespit + okuma akışı"""
+        self.show_plate()
+        if self.cropped_plate is not None:
+            self.read_plate()
+
     def read_plate(self):
-        """OCR ile plakayı oku"""
+        """Model ile plakayı oku"""
         if self.cropped_plate is None:
             messagebox.showwarning("Uyarı", "Önce plakayı tespit edin!")
             return
@@ -736,8 +702,8 @@ class PlakaTespitUygulamasi:
 
             start_total = time.time()
 
-            # Model ve OCR Sonuçlarını al
-            _, _, model_data, ocr_data = self.detector.read_plate_text(
+            # Model sonuçlarını al
+            _, _, model_data = self.detector.read_plate_text(
                 self.cropped_plate,
                 image_is_rgb=not self.images_are_bgr,
                 full_image=self.original_image,
@@ -747,54 +713,15 @@ class PlakaTespitUygulamasi:
             )
             _ = time.time() - start_total
 
-            # MODEL SONUCU
-            model_result = "Model devre dışı"
             if not self.detector.use_character_model:
-                model_result = "Model kapalı"
-            elif model_data:
-                if model_data['success']:
-                    model_result = "Model Sonucu\n" + ("─" * 25) + "\n"
-                    model_result += f"Plaka: {model_data['text']}\n"
-                    model_result += f"Güven: {model_data['confidence']:.1%}\n"
-                    model_result += f"Karakter: {len(model_data['characters'])}\n"
-                    model_result += f"Süre: {model_data['processing_time']:.3f}s"
-                else:
-                    model_result = f"Model\n{model_data['error']}"
+                self.plate_result_value.config(text="MODEL KAPALI", fg=self.colors["muted"])
+                self.plate_result_status.config(text="○", fg=self.colors["muted"])
+            elif model_data and model_data.get("success"):
+                self.plate_result_value.config(text=model_data.get("text", "--"), fg=self.colors["text"])
+                self.plate_result_status.config(text="✔", fg=self.colors["success"])
             else:
-                model_result = "Model başlatılmadı"
-
-            # OCR SONUCU (BGR + GRAY)
-            ocr_result = "OCR devre dışı"
-            if not self.detector.use_ocr:
-                ocr_result = "OCR kapalı"
-            elif ocr_data:
-                best = ocr_data.get("best") if isinstance(ocr_data, dict) else ocr_data
-                bgr = ocr_data.get("bgr") if isinstance(ocr_data, dict) else None
-                gray = ocr_data.get("gray") if isinstance(ocr_data, dict) else None
-
-                if best and best.get("success"):
-                    ocr_result = "OCR Sonucu\n" + ("─" * 25) + "\n"
-                    ocr_result += f"En İyi: {best['text']} ({best['confidence']:.1%})\n"
-                else:
-                    ocr_result = "OCR\nBaşarısız"
-
-                if bgr:
-                    ocr_result += f"BGR: {bgr.get('text', '')} ({bgr.get('confidence', 0.0):.1%})\n"
-                if gray:
-                    ocr_result += f"GRAY: {gray.get('text', '')} ({gray.get('confidence', 0.0):.1%})"
-            else:
-                ocr_result = "OCR başlatılmadı"
-
-            # Sonuçları göster
-            self.model_text.config(state=tk.NORMAL)
-            self.model_text.delete('1.0', tk.END)
-            self.model_text.insert('1.0', model_result)
-            self.model_text.config(state=tk.DISABLED)
-
-            self.ocr_text.config(state=tk.NORMAL)
-            self.ocr_text.delete('1.0', tk.END)
-            self.ocr_text.insert('1.0', ocr_result)
-            self.ocr_text.config(state=tk.DISABLED)
+                self.plate_result_value.config(text="OKUMA BAŞARISIZ", fg=self.colors["warning"])
+                self.plate_result_status.config(text="!", fg=self.colors["warning"])
 
             self.status_label.config(text="Okuma tamamlandı")
 
@@ -804,15 +731,16 @@ class PlakaTespitUygulamasi:
 
     def reset_results(self):
         """Sonuçları sıfırla"""
-        self.model_text.config(state=tk.NORMAL)
-        self.model_text.delete('1.0', tk.END)
-        self.model_text.insert('1.0', 'Henüz işlem yapılmadı.')
-        self.model_text.config(state=tk.DISABLED)
+        self.plate_result_value.config(text="--", fg=self.colors["text"])
+        self.plate_result_status.config(text="○", fg=self.colors["muted"])
 
-        self.ocr_text.config(state=tk.NORMAL)
-        self.ocr_text.delete('1.0', tk.END)
-        self.ocr_text.insert('1.0', 'Henüz işlem yapılmadı.')
-        self.ocr_text.config(state=tk.DISABLED)
+    def reset_container_results(self):
+        """Konteyner sonuçlarını sıfırla"""
+        self.container_result_value.config(text="--", fg=self.colors["text"])
+        self.container_result_sub.config(text="", fg=self.colors["muted"])
+        self.container_result_status.config(text="○", fg=self.colors["muted"])
+        self.seal_result_value.config(text="--", fg=self.colors["muted"])
+        self._set_overlays([])
 
     def save_result(self):
         """Sonucu kaydet"""
@@ -837,10 +765,143 @@ class PlakaTespitUygulamasi:
             except Exception as e:
                 messagebox.showerror("Hata", f"Kayıt hatası: {str(e)}")
 
+    def find_container_iso(self):
+        """Konteyner ISO alanını tespit eder"""
+        if self.original_image is None:
+            messagebox.showwarning("Uyarı", "Önce resim veya video yükleyin!")
+            return
+
+        if not self.container_detector.model:
+            messagebox.showerror("Hata", "Konteyner modeli yüklü değil!")
+            return
+
+        try:
+            self.status_label.config(text="Konteyner ISO tespit ediliyor...")
+            self.root.update()
+
+            result = self.container_detector.detect_container_number_in_image(
+                self.original_image, read_text=False
+            )
+
+            if result['success'] and result['coordinates']:
+                x1, y1, x2, y2 = result['coordinates'][0]
+                conf = result['confidence'][0]
+
+                self.container_crop = self.original_image[y1:y2, x1:x2]
+                self.container_coords = (x1, y1, x2, y2)
+                self.container_read_btn.config(state=tk.NORMAL)
+
+                self.container_result_value.config(text="ALAN BULUNDU", fg=self.colors["text"])
+                self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
+                self.container_result_status.config(text="✔", fg=self.colors["success"])
+                self._set_overlays([{
+                    "bbox": (x1, y1, x2, y2),
+                    "label": "Container ISO",
+                    "color": (255, 140, 40),
+                }])
+                self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
+                self.status_label.config(text="Konteyner ISO alanı bulundu")
+            else:
+                messagebox.showwarning("Uyarı", "Konteyner ISO alanı bulunamadı!")
+                self.status_label.config(text="Konteyner ISO alanı yok")
+
+        except Exception as e:
+            messagebox.showerror("Hata", f"Konteyner tespit hatası: {str(e)}")
+
+    def read_container_iso(self):
+        """Konteyner ISO numarasını okur"""
+        if self.container_crop is None:
+            messagebox.showwarning("Uyarı", "Önce konteyner ISO alanını tespit edin!")
+            return
+
+        try:
+            self.status_label.config(text="Konteyner ISO okunuyor...")
+            self.root.update()
+
+            text, conf, model_data = self.container_detector.read_number_from_crop(
+                self.container_crop,
+                image_is_rgb=not self.images_are_bgr,
+                full_image=self.original_image,
+                coords=self.container_coords,
+            )
+
+            if text:
+                self.container_result_value.config(text=text, fg=self.colors["text"])
+                check_ok = model_data.get("check_digit_ok") if model_data else None
+                if check_ok is True:
+                    self.container_result_sub.config(text="✔ Valid Check Digit", fg=self.colors["success"])
+                    self.container_result_status.config(text="✔", fg=self.colors["success"])
+                elif check_ok is False:
+                    self.container_result_sub.config(text="✖ Check Digit Hatalı", fg=self.colors["warning"])
+                    self.container_result_status.config(text="!", fg=self.colors["warning"])
+                else:
+                    self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
+                    self.container_result_status.config(text="✔", fg=self.colors["success"])
+                self.log_message(f"Konteyner ISO okundu: {text}")
+            else:
+                self.container_result_value.config(text="OKUMA BAŞARISIZ", fg=self.colors["warning"])
+                self.container_result_sub.config(text="", fg=self.colors["muted"])
+                self.container_result_status.config(text="!", fg=self.colors["warning"])
+
+            self.status_label.config(text="Konteyner ISO okuma tamamlandı")
+
+        except Exception as e:
+            messagebox.showerror("Hata", f"Konteyner okuma hatası: {str(e)}")
+            self.status_label.config(text="Konteyner ISO okuma başarısız")
+
+    def check_container_seal(self):
+        """Konteyner mühür var/yok kontrolü"""
+        if self.original_image is None:
+            messagebox.showwarning("Uyarı", "Önce resim veya video yükleyin!")
+            return
+
+        if not self.seal_detector.model:
+            messagebox.showerror("Hata", "Mühür modeli yüklü değil!")
+            return
+
+        try:
+            self.status_label.config(text="Mühür kontrol ediliyor...")
+            self.root.update()
+
+            result = self.seal_detector.detect_seal(self.original_image)
+            if not result.get("success"):
+                self.seal_result_value.config(text="KONTROL BAŞARISIZ", fg=self.colors["warning"])
+                self.status_label.config(text="Mühür kontrol başarısız")
+                self.log_message("Mühür kontrol başarısız")
+                return
+
+            present = result.get("present")
+            conf = result.get("confidence", 0.0)
+
+            if present:
+                self.seal_result_value.config(text="MEVCUT (OK)", fg=self.colors["success"])
+            else:
+                self.seal_result_value.config(text="YOK", fg=self.colors["warning"])
+
+            boxes = result.get("boxes") or []
+            if boxes:
+                best = max(boxes, key=lambda b: b.get("confidence", 0.0))
+                bbox = best.get("bbox")
+                if bbox:
+                    self._set_overlays([{
+                        "bbox": bbox,
+                        "label": "Seal",
+                        "color": (0, 215, 255) if present else (40, 120, 255),
+                    }])
+                    self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
+
+            self.status_label.config(text=f"Mühür kontrol tamamlandı ({conf:.0%})")
+            self.log_message(f"Mühür kontrol: {'MEVCUT' if present else 'YOK'}")
+
+        except Exception as e:
+            messagebox.showerror("Hata", f"Mühür kontrol hatası: {str(e)}")
+            self.status_label.config(text="Mühür kontrol başarısız")
     def display_image(self, image, canvas, bgr_to_rgb=False):
         """Resmi canvas'a göster"""
         if image is None:
             return
+        if canvas == self.original_canvas:
+            image = self._draw_overlays(image)
         if bgr_to_rgb and len(image.shape) == 3 and image.shape[2] == 3:
             try:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -863,6 +924,24 @@ class PlakaTespitUygulamasi:
         canvas.delete("all")
         canvas.create_image(w // 2, h // 2, image=photo, anchor=tk.CENTER)
         canvas.image = photo
+
+    def _resize_to_canvas(self, image, canvas, bgr_to_rgb=False):
+        """Canvas boyutuna ölçeklenmiş PIL image döner."""
+        if image is None:
+            return None
+        if bgr_to_rgb and len(image.shape) == 3 and image.shape[2] == 3:
+            try:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            except Exception:
+                pass
+        canvas.update()
+        w, h = canvas.winfo_width(), canvas.winfo_height()
+        if w < 2 or h < 2:
+            return None
+        pil_img = Image.fromarray(image)
+        scale = min(w / pil_img.width, h / pil_img.height)
+        new_w, new_h = int(pil_img.width * scale * 0.95), int(pil_img.height * scale * 0.95)
+        return pil_img.resize((new_w, new_h), Image.LANCZOS)
 
 
 def main():

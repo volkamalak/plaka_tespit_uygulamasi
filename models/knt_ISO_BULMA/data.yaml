@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 6
+names: ['0', 'ISO', 'container_number', 'container_number_h', 'container_number_v', 'le-tle-t-tletters']
+
+roboflow:
+  workspace: lma3mal
+  project: final_container_project
+  version: 7
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/lma3mal/final_container_project/dataset/7

@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['seal']
+
+roboflow:
+  workspace: container-number
+  project: container-seal-detection
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/container-number/container-seal-detection/dataset/3

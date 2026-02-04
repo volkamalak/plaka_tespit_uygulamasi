@@ -1,5 +1,5 @@
 """
-YOLO Plaka Tespit Modeli Eğitimi
+SANKO Port - YOLO Plaka Tespit Modeli Eğitimi
 License Plate Detection Training Script
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 
 print("="*70)
-print("YOLO PLAKA TESPİT MODELİ EĞİTİMİ")
+print("SANKO PORT - YOLO PLAKA TESPİT MODELİ EĞİTİMİ")
 print("="*70)
 
 # GPU Kontrolü
