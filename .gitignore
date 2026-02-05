@@ -26,8 +26,21 @@ wheels/
 .installed.cfg
 *.egg
 
-# YOLO Models
-models/*.pt
+# ML Artifacts / Datasets
+datasets/
+runs/
+test_plates/
+*.pt
+!models/*.pt
+!models/**/*.pt
+*.pth
+*.zip
+*.tar
+*.tar.gz
+*.onnx
+*.engine
+*.tflite
+*.pb
 !models/MODEL_BURAYA.txt
 
 # Test Images
