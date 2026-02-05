@@ -784,25 +784,81 @@ class PlakaTespitUygulamasi:
             )
 
             if result['success'] and result['coordinates']:
-                best_idx = max(range(len(result['confidence'])), key=lambda i: result['confidence'][i])
-                x1, y1, x2, y2 = result['coordinates'][best_idx]
-                conf = result['confidence'][best_idx]
+                coords = result.get("coordinates") or []
+                confs = result.get("confidence") or []
+                area_ratios = result.get("area_ratio") or []
+
+                candidates = []
+                for idx, bbox in enumerate(coords):
+                    conf = confs[idx] if idx < len(confs) else 0.0
+                    area_ratio = area_ratios[idx] if idx < len(area_ratios) else None
+                    if area_ratio is None:
+                        size_score = 0.0
+                    else:
+                        size_score = min(1.0, float(area_ratio) / 0.02)
+                    det_score = 0.7 * float(conf) + 0.3 * size_score
+                    candidates.append({
+                        "bbox": bbox,
+                        "conf": conf,
+                        "area_ratio": area_ratio,
+                        "det_score": det_score,
+                    })
+
+                candidates.sort(key=lambda c: c["det_score"], reverse=True)
+
+                best = None
+                best_tier = -1
+                best_score = -1.0
+                best_text = ""
+                best_text_conf = 0.0
+                best_model_data = None
+
+                max_try = min(4, len(candidates))
+                for cand in candidates[:max_try]:
+                    x1, y1, x2, y2 = cand["bbox"]
+                    crop = self.original_image[y1:y2, x1:x2]
+                    text, text_conf, model_data = self.container_detector.read_number_from_crop(
+                        crop,
+                        image_is_rgb=not self.images_are_bgr,
+                        full_image=self.original_image,
+                        coords=(x1, y1, x2, y2),
+                    )
+                    check_ok = model_data.get("check_digit_ok") if model_data else None
+
+                    if text and check_ok is True:
+                        tier = 2
+                        score = float(text_conf)
+                    elif text:
+                        tier = 1
+                        score = 0.6 * float(text_conf) + 0.4 * float(cand["det_score"])
+                    else:
+                        tier = 0
+                        score = float(cand["det_score"])
+
+                    if tier > best_tier or (tier == best_tier and score > best_score):
+                        best = cand
+                        best_tier = tier
+                        best_score = score
+                        best_text = text
+                        best_text_conf = text_conf
+                        best_model_data = model_data
+
+                if best is None:
+                    best = candidates[0]
+
+                x1, y1, x2, y2 = best["bbox"]
+                conf = best["conf"]
 
                 self.container_crop = self.original_image[y1:y2, x1:x2]
                 self.container_coords = (x1, y1, x2, y2)
                 self.container_read_btn.config(state=tk.NORMAL)
 
-                text, text_conf, model_data = self.container_detector.read_number_from_crop(
-                    self.container_crop,
-                    image_is_rgb=not self.images_are_bgr,
-                )
-
-                if text:
-                    display_text = model_data.get("formatted") if model_data else None
+                if best_text:
+                    display_text = best_model_data.get("formatted") if best_model_data else None
                     if not display_text:
-                        display_text = text
+                        display_text = best_text
                     self.container_result_value.config(text=display_text, fg=self.colors["text"])
-                    check_ok = model_data.get("check_digit_ok") if model_data else None
+                    check_ok = best_model_data.get("check_digit_ok") if best_model_data else None
                     if check_ok is True:
                         self.container_result_sub.config(text="✔ Valid Check Digit", fg=self.colors["success"])
                         self.container_result_status.config(text="✔", fg=self.colors["success"])
@@ -811,15 +867,15 @@ class PlakaTespitUygulamasi:
                         self.container_result_status.config(text="!", fg=self.colors["warning"])
                     else:
                         self.container_result_sub.config(
-                            text=f"Güven: {max(conf, text_conf):.1%}", fg=self.colors["muted"]
+                            text=f"Güven: {max(conf, best_text_conf):.1%}", fg=self.colors["muted"]
                         )
                         self.container_result_status.config(text="✔", fg=self.colors["success"])
-                    # ensure result section always shows the detected ISO text
                     self.container_result_value.config(text=display_text, fg=self.colors["text"])
                 else:
                     self.container_result_value.config(text="OKUMA BAŞARISIZ", fg=self.colors["warning"])
                     self.container_result_sub.config(text=f"Güven: {conf:.1%}", fg=self.colors["muted"])
                     self.container_result_status.config(text="!", fg=self.colors["warning"])
+
                 self._set_overlays([{
                     "bbox": (x1, y1, x2, y2),
                     "label": "Container ISO",

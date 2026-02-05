@@ -70,7 +70,7 @@ class CharacterDetector:
             )
         return padded
 
-    def detect_characters(self, plate_image, conf_threshold=0.12):
+    def detect_characters(self, plate_image, conf_threshold=0.12, sort_by="x"):
         """
         Plaka görüntüsündeki karakterleri tespit eder
 
@@ -135,14 +135,18 @@ class CharacterDetector:
                     character = {
                         'bbox': (x1, y1, x2, y2),
                         'center_x': (x1 + x2) / 2,
+                        'center_y': (y1 + y2) / 2,
                         'confidence': conf,
                         'class': cls,
                         'char': char_label
                     }
                     characters.append(character)
 
-            # Karakterleri soldan sağa sırala (x koordinatına göre)
-            characters = sorted(characters, key=lambda c: c['center_x'])
+            # Karakter sıralaması
+            if sort_by == "y":
+                characters = sorted(characters, key=lambda c: c['center_y'])
+            else:
+                characters = sorted(characters, key=lambda c: c['center_x'])
 
             # Metni oluştur
             text = ''.join([c['char'] for c in characters])
@@ -170,11 +174,24 @@ class CharacterDetector:
     @staticmethod
     def _normalize_label(label):
         label = str(label).strip()
+        if not label:
+            return ""
+        special_map = {
+            "55": "5",
+            "D-": "D",
+        }
+        upper = label.upper()
+        if upper in special_map:
+            label = special_map[upper]
         # Patterns like "-0-" -> "0"
         if len(label) >= 3 and label[0] == "-" and label[-1] == "-":
             label = label[1:-1]
         if label.isdigit():
-            return label
+            if len(label) == 1:
+                return label
+            if len(set(label)) == 1:
+                return label[0]
+            return label[0]
         if len(label) == 1 and label.isalpha():
             return label.upper()
         # Fallback: extract first alnum

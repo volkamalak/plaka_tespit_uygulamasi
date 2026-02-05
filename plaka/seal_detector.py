@@ -198,4 +198,3 @@ if __name__ == "__main__":
                 print(f"{test_image}: {status} (Confidence: {result['confidence']:.2f})")
             else:
                 print(f"{test_image}: Detection failed - {result['error']}")
-                
