@@ -86,7 +86,7 @@ def train_character_model():
     print(f"  - Recall: {results.results_dict.get('metrics/recall', 'N/A')}")
 
     print("\n🎉 Karakter modeli hazır!")
-    print("👉 OCR pipeline'a direkt entegre edebilirsin.")
+    print("👉 Okuma pipeline'ına direkt entegre edebilirsin.")
 
 if __name__ == "__main__":
     train_character_model()

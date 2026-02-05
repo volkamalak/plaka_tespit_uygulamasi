@@ -1,7 +1,6 @@
 """
 Plaka Tespit Modülü
 YOLO kullanarak resimlerde plaka tespiti yapar
-OCR ile plaka numarasını okur
 Character model ile metin okur
 """
 
@@ -9,7 +8,6 @@ import cv2
 import time
 from ultralytics import YOLO
 from pathlib import Path
-from .ocr import PlakaOCR
 from .character_detector import CharacterDetector
 
 
@@ -19,8 +17,6 @@ class PlakaDetector:
     def __init__(
         self,
         model_path='models/find_plate_best.pt',
-        use_ocr=True,
-        ocr_languages=['tur', 'eng'],
         use_character_model=True,
         character_model_path='models/character_best.pt',
     ):
@@ -29,21 +25,14 @@ class PlakaDetector:
 
         Args:
             model_path (str): YOLO model dosyasının yolu
-            use_ocr (bool): OCR kullanılsın mı?
-            ocr_languages (list): OCR dilleri (tesseract kodları)
         """
         self.model_path = model_path
         self.model = None
-        self.use_ocr = use_ocr
-        self.ocr = None
         self.use_character_model = use_character_model
         self.character_model_path = character_model_path
         self.char_detector = None
 
         self.load_model()
-
-        if self.use_ocr:
-            self.load_ocr(ocr_languages)
 
     def load_character_model(self):
         """Character modelini yükler (lazy)."""
@@ -72,17 +61,6 @@ class PlakaDetector:
             print(f"Model yükleme hatası: {e}")
             self.model = None
 
-    def load_ocr(self, languages):
-        """OCR modülünü yükler"""
-        try:
-            print("OCR modülü yükleniyor...")
-            self.ocr = PlakaOCR(languages=languages)
-            print("OCR modülü başarıyla yüklendi!")
-        except Exception as e:
-            print(f"OCR yükleme hatası: {e}")
-            self.ocr = None
-            self.use_ocr = False
-
     def detect_plate(self, image_path, conf_threshold=0.25, read_text=True):
         """
         Verilen resimdeki plakayı tespit eder ve okur
@@ -90,7 +68,7 @@ class PlakaDetector:
         Args:
             image_path (str): Resim dosyasının yolu
             conf_threshold (float): Güven eşiği (0-1 arası)
-            read_text (bool): Plaka metnini oku
+            read_text (bool): Plaka metnini oku (model)
 
         Returns:
             dict: Tespit sonuçları
@@ -99,7 +77,7 @@ class PlakaDetector:
                 - coordinates (list): Plaka koordinatları [(x1, y1, x2, y2), ...]
                 - confidence (list): Güven skorları
                 - plate_texts (list): Okunan plaka metinleri
-                - ocr_confidence (list): OCR güven skorları
+                - text_confidence (list): Okuma güven skorları
                 - processing_time (float): İşlem süresi (saniye)
                 - error (str): Hata mesajı (varsa)
         """
@@ -109,7 +87,7 @@ class PlakaDetector:
             'coordinates': [],
             'confidence': [],
             'plate_texts': [],
-            'ocr_confidence': [],
+            'text_confidence': [],
             'processing_time': 0,
             'error': None
         }
@@ -152,20 +130,22 @@ class PlakaDetector:
                     result['coordinates'].append((x1, y1, x2, y2))
                     result['confidence'].append(conf)
 
-                    # OCR ile plaka metnini oku
+                    # Model ile plaka metnini oku
                     plate_text = ""
-                    ocr_conf = 0.0
+                    text_conf = 0.0
 
-                    if read_text and self.use_ocr and self.ocr:
-                        ocr_result = self.ocr.read_plate_from_coordinates(
-                            image, (x1, y1, x2, y2)
+                    if read_text and self.use_character_model:
+                        plate_crop = image[y1:y2, x1:x2]
+                        plate_text, text_conf, _ = self.read_plate_text(
+                            plate_crop,
+                            image_is_rgb=False,
+                            full_image=image,
+                            coords=(x1, y1, x2, y2),
+                            use_full_image_for_char=False,
                         )
-                        if ocr_result['success']:
-                            plate_text = ocr_result['text']
-                            ocr_conf = ocr_result['confidence']
 
                     result['plate_texts'].append(plate_text)
-                    result['ocr_confidence'].append(ocr_conf)
+                    result['text_confidence'].append(text_conf)
 
                     # Çerçeve çiz
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -223,7 +203,7 @@ class PlakaDetector:
         Args:
             image (numpy.ndarray): BGR görüntü
             conf_threshold (float): Güven eşiği
-            read_text (bool): OCR oku
+            read_text (bool): Metni oku (model)
 
         Returns:
             dict: detect_plate ile aynı yapı
@@ -234,7 +214,7 @@ class PlakaDetector:
             'coordinates': [],
             'confidence': [],
             'plate_texts': [],
-            'ocr_confidence': [],
+            'text_confidence': [],
             'processing_time': 0,
             'error': None
         }
@@ -261,17 +241,19 @@ class PlakaDetector:
                     result['confidence'].append(conf)
 
                     plate_text = ""
-                    ocr_conf = 0.0
-                    if read_text and self.use_ocr and self.ocr:
-                        ocr_result = self.ocr.read_plate_from_coordinates(
-                            image, (x1, y1, x2, y2)
+                    text_conf = 0.0
+                    if read_text and self.use_character_model:
+                        plate_crop = image[y1:y2, x1:x2]
+                        plate_text, text_conf, _ = self.read_plate_text(
+                            plate_crop,
+                            image_is_rgb=False,
+                            full_image=image,
+                            coords=(x1, y1, x2, y2),
+                            use_full_image_for_char=False,
                         )
-                        if ocr_result['success']:
-                            plate_text = ocr_result['text']
-                            ocr_conf = ocr_result['confidence']
 
                     result['plate_texts'].append(plate_text)
-                    result['ocr_confidence'].append(ocr_conf)
+                    result['text_confidence'].append(text_conf)
 
                     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
@@ -295,10 +277,9 @@ class PlakaDetector:
         coords=None,
         use_full_image_for_char=False,
         debug_dir=None,
-        use_ocr=None,
     ):
         """
-        Plakayı hem Character Model hem OCR ile okur.
+        Plakayı Character Model ile okur.
 
         Args:
             plate_image (numpy.ndarray): Plaka görüntüsü (BGR varsayılan)
@@ -306,10 +287,10 @@ class PlakaDetector:
             image_is_rgb (bool): Görüntü RGB ise True (GUI'den gelenler için)
 
         Returns:
-            tuple: (plate_text, plate_conf, model_data, ocr_data)
+            tuple: (plate_text, plate_conf, model_data)
         """
         if plate_image is None or getattr(plate_image, "size", 0) == 0:
-            return "", 0.0, None, None
+            return "", 0.0, None
 
         # Gerekirse RGB -> BGR
         plate_bgr = plate_image
@@ -327,7 +308,6 @@ class PlakaDetector:
                 full_bgr = full_image
 
         model_data = None
-        ocr_data = None
 
         def _prepare_for_char_model(img):
             """Character model için pad + büyütme."""
@@ -400,47 +380,14 @@ class PlakaDetector:
                     "error": "Character model bulunamadı",
                 }
 
-        # OCR (BGR ve GRAY)
-        use_ocr_flag = self.use_ocr if use_ocr is None else use_ocr
-        if use_ocr_flag and self.ocr:
-            ocr_bgr = self.ocr.read_plate(plate_bgr)
-            try:
-                gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
-            except Exception:
-                gray = plate_bgr
-            ocr_gray = self.ocr.read_plate(gray)
-
-            # En iyi OCR sonucunu seç
-            best_ocr = ocr_bgr
-            if ocr_gray and ocr_gray.get("success"):
-                if (not ocr_bgr or not ocr_bgr.get("success")) or (
-                    ocr_gray.get("confidence", 0.0) > ocr_bgr.get("confidence", 0.0)
-                ):
-                    best_ocr = ocr_gray
-
-            ocr_data = {
-                "best": best_ocr,
-                "bgr": ocr_bgr,
-                "gray": ocr_gray,
-            }
-
         # En iyi sonucu seç (varsa)
         plate_text = ""
         plate_conf = 0.0
-        candidates = []
         if model_data and model_data.get("success") and model_data.get("text"):
-            candidates.append(("model", model_data["text"], model_data.get("confidence", 0.0)))
-        if ocr_data and ocr_data.get("best") and ocr_data["best"].get("success") and ocr_data["best"].get("text"):
-            candidates.append((
-                "ocr",
-                ocr_data["best"]["text"],
-                ocr_data["best"].get("confidence", 0.0)
-            ))
+            plate_text = model_data["text"]
+            plate_conf = model_data.get("confidence", 0.0)
 
-        if candidates:
-            _, plate_text, plate_conf = max(candidates, key=lambda x: x[2])
-
-        return plate_text, plate_conf, model_data, ocr_data
+        return plate_text, plate_conf, model_data
 
     def detect_plate_in_stream(
         self,
@@ -577,10 +524,9 @@ class PlakaDetector:
                 plate_text = ""
                 plate_conf = 0.0
                 if read_text:
-                    plate_text, plate_conf, _, _ = self.read_plate_text(
+                    plate_text, plate_conf, _ = self.read_plate_text(
                         plate_crop,
                         image_is_rgb=False,
-                        use_ocr=False,
                     )
 
                 raw_candidates.append({
@@ -678,7 +624,7 @@ class PlakaDetector:
 
 if __name__ == "__main__":
     # Test kodu
-    detector = PlakaDetector(use_ocr=True)
+    detector = PlakaDetector()
 
     # Test resmi varsa çalıştır
     test_image = "test.jpg"
@@ -690,18 +636,18 @@ if __name__ == "__main__":
             print(f"İşlem süresi: {result['processing_time']:.3f} saniye")
             print(f"Bulunan plaka sayısı: {len(result['coordinates'])}")
 
-            for i, (coords, conf, text, ocr_conf) in enumerate(zip(
+            for i, (coords, conf, text, text_conf) in enumerate(zip(
                 result['coordinates'],
                 result['confidence'],
                 result['plate_texts'],
-                result['ocr_confidence']
+                result['text_confidence']
             )):
                 print(f"\nPlaka {i+1}:")
                 print(f"  Koordinatlar: {coords}")
                 print(f"  Tespit Güveni: {conf:.2f}")
                 if text:
                     print(f"  Plaka Numarası: {text}")
-                    print(f"  OCR Güveni: {ocr_conf:.2f}")
+                    print(f"  Okuma Güveni: {text_conf:.2f}")
         else:
             print(f"Hata: {result['error']}")
     else:
