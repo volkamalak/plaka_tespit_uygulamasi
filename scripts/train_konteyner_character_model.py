@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Konteyner ISO karakter okuma modeli (YOLOv8) eğitimi.
-Dataset: datasets/konteyner_karakter_okuma
+Konteyner ISO karakter tespiti modeli (YOLOv8) eğitimi.
+Dataset: datasets/konteyner_karakter_okuma (nc=1, names=['char'])
 """
 
 from __future__ import annotations
@@ -22,12 +22,30 @@ def _normalize_cache(value):
     return value
 
 
+def _read_dataset_meta(data_path: Path):
+    nc = None
+    names = None
+    try:
+        for line in data_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("nc:"):
+                try:
+                    nc = int(stripped.split(":", 1)[1].strip())
+                except Exception:
+                    pass
+            if stripped.startswith("names:"):
+                names = stripped.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return nc, names
+
+
 def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
     default_data = root / "datasets" / "konteyner_karakter_okuma" / "data.yaml"
     default_copy = root / "models" / "konteyner_karakter_best.pt"
 
-    parser = argparse.ArgumentParser(description="Train YOLOv8 container ISO character model.")
+    parser = argparse.ArgumentParser(description="Train YOLOv8 container ISO character detector.")
     parser.add_argument("--data", type=Path, default=default_data, help="Path to data.yaml")
     parser.add_argument("--model", type=str, default="yolov8n.pt", help="Base model weights")
     parser.add_argument("--epochs", type=int, default=120, help="Number of training epochs")
@@ -35,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--device", type=str, default="0", help="Device: 0,1,... or 'cpu'")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
-    parser.add_argument("--name", type=str, default="konteyner_karakter", help="Run name")
+    parser.add_argument("--name", type=str, default="konteyner_char_detector", help="Run name")
     parser.add_argument("--project", type=Path, default=Path("runs"), help="Project dir")
     parser.add_argument("--workers", type=int, default=8, help="Dataloader workers")
     parser.add_argument("--cache", type=str, default="False", help="Cache: ram, disk, True/False")
@@ -56,6 +74,11 @@ def main() -> None:
         return
 
     print(f"\n✓ Dataset: {args.data}")
+    nc, names = _read_dataset_meta(args.data)
+    if nc is not None:
+        print(f"  - nc: {nc}")
+    if names:
+        print(f"  - names: {names}")
     print(f"✓ Base model: {args.model}")
     print("\n⚙️  Training params:")
     print(f"  - Epochs: {args.epochs}")
