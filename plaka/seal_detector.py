@@ -179,3 +179,23 @@ class ContainerSealDetector:
         result["error"] = "No seal detected"
         result["boxes"] = boxes
         return result
+if __name__ == "__main__":
+    import cv2
+
+    detector = ContainerSealDetector()
+
+    test_images = [
+        "test_images/container_with_seal.jpg",
+        "test_images/container_without_seal.jpg",
+    ]
+
+    for test_image in test_images:
+        img = cv2.imread(test_image)
+        if img is not None:
+            result = detector.detect_seal(img)
+            if result["success"]:
+                status = "Seal Present" if result["present"] else "No Seal"
+                print(f"{test_image}: {status} (Confidence: {result['confidence']:.2f})")
+            else:
+                print(f"{test_image}: Detection failed - {result['error']}")
+                
