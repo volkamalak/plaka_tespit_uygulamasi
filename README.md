@@ -6,6 +6,8 @@ Python ve Ultralytics YOLO kullanarak görüntülerde plaka tespiti ve **model t
 
 - 🚗 **YOLO tabanlı plaka tespiti** (eğitilmiş model ile)
 - 🔤 **Character YOLO modeliyle okuma** (OCR yok)
+- 📦 **Konteyner işlemleri**: ISO alanı bulma/okuma, mühür kontrolü, hasar kontrolü
+- 🧱 **Hasar türü çıktısı**: Tespit edilen hasarları sınıfına göre raporlama (ör. `dent`, `scratch`, `corrosion`)
 - 🎥 **Video desteği**: Video yükleme, oynatma ve stabil okuma
 - 📍 **Koordinat ve güven skorlarını gösterme**
 - ⏱️ **İşlem süresi ölçümü**
@@ -35,7 +37,8 @@ SANKO Port/
 ```
 models/
 ├── best.pt             # Zorunlu: plaka tespit modeli
-└── character_best.pt   # Opsiyonel: karakter (harf/rakam) okuma modeli
+├── character_best.pt   # Opsiyonel: karakter (harf/rakam) okuma modeli
+└── konteyner_hasar.pt  # Opsiyonel: konteyner hasar tespit modeli
 ```
 
 ### 2) Windows (PowerShell / CMD)
@@ -150,6 +153,7 @@ Uygulama açıldığında:
 - **Resim Yükle** ile görüntü seçin.
 - **Plakayı Tespit Et** ile plaka bölgesini bulun.
 - **Metni Oku** ile model okumasını çalıştırın.
+- **Konteyner** panelinden mühür/hasar kontrollerini çalıştırın.
 - **Kaydet** ile kırpılmış plaka görüntüsünü diske yazın.
 
 ## Video Modu
@@ -165,6 +169,7 @@ Uygulama açıldığında:
 
 - `models/best.pt` **zorunludur**. Yoksa plaka tespiti yapılamaz.
 - `models/character_best.pt` **opsiyoneldir**. Yoksa metin okuma yapılamaz.
+- `models/konteyner_hasar.pt` **opsiyoneldir**. Yoksa hasar kontrolü çalışmaz.
 
 Model yolunu değiştirmek için `plaka/detector.py` içindeki `model_path` ve `character_model_path` değerlerini güncelleyebilirsiniz.
 
@@ -201,6 +206,21 @@ print(result["success"], result.get("plate_texts"))
 Bazı scriptlerde sabit dosya yollarının güncellenmesi gerekir:
 - `scripts/test_detector.py`
 - `scripts/full_test.py`
+- `scripts/train_container_damage_model.py` (YOLO26 tabanlı konteyner hasar modeli eğitimi)
+
+## Konteyner Hasar Modeli (YOLO26)
+
+Bu projede GUI tarafı hasar tespitine hazırdır. Modeli eğitip `models/konteyner_hasar.pt` olarak koyduğunuzda doğrudan çalışır.
+
+Örnek eğitim:
+
+```bash
+.venv/bin/python scripts/train_container_damage_model.py \
+  --data datasets/container_damage/data.yaml \
+  --model yolo26n.pt
+```
+
+Not: Bazı açık veri setlerinde sınıf adları `0,1,2,3,4,5` veya `object` gelebilir. Uygulama bu etiketleri otomatik olarak `dent/scratch/crack/corrosion/deformation/breakage` ve `no_damage` çıktısına eşler.
 
 ## Sık Görülen Sorunlar
 

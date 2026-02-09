@@ -10,6 +10,7 @@ import cv2
 from .detector import PlakaDetector
 from .container_detector import ContainerNumberDetector
 from .seal_detector import ContainerSealDetector
+from .damage_detector import ContainerDamageDetector
 import time
 
 
@@ -55,6 +56,7 @@ class PlakaTespitUygulamasi:
         self.detector = PlakaDetector()
         self.container_detector = ContainerNumberDetector()
         self.seal_detector = ContainerSealDetector()
+        self.damage_detector = ContainerDamageDetector(min_damage_conf=0.65)
         self.current_image_path = None
         self.original_image = None
         self.cropped_plate = None
@@ -283,8 +285,14 @@ class PlakaTespitUygulamasi:
         self.container_read_btn = styled_button(cont_row, "Konteyner ISO Oku", self.read_container_iso, "#2454b5", state=tk.DISABLED)
         self.container_read_btn.pack(side=tk.LEFT, padx=8)
 
-        self.seal_btn = styled_button(cont_row, "Mühür Kontrol Et", self.check_container_seal, "#7c2d12", state=tk.DISABLED)
-        self.seal_btn.pack(side=tk.LEFT, padx=(8, 0))
+        cont_row2 = tk.Frame(cont_ops_body, bg=self.colors["surface"])
+        cont_row2.pack(fill=tk.X, pady=(8, 0))
+
+        self.seal_btn = styled_button(cont_row2, "Mühür Kontrol Et", self.check_container_seal, "#7c2d12", state=tk.DISABLED)
+        self.seal_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.damage_btn = styled_button(cont_row2, "Hasar Kontrol Et", self.check_container_damage, "#8f1f2f", state=tk.DISABLED)
+        self.damage_btn.pack(side=tk.LEFT, padx=8)
 
         # PLAKA SONUCU
         plate_result, plate_result_body = card(right_col, "PLAKA SONUCU")
@@ -354,6 +362,28 @@ class PlakaTespitUygulamasi:
             fg=self.colors["muted"]
         )
         self.seal_result_value.pack(anchor="w")
+
+        # KONTEYNER HASAR KONTROLÜ
+        damage_result, damage_result_body = card(right_col, "KONTEYNER HASAR KONTROLÜ")
+        damage_result.pack(fill=tk.X, pady=(12, 0))
+
+        self.damage_result_value = tk.Label(
+            damage_result_body,
+            text="--",
+            font=self.fonts["big_value_alt"],
+            bg=self.colors["surface"],
+            fg=self.colors["muted"]
+        )
+        self.damage_result_value.pack(anchor="w")
+
+        self.damage_result_sub = tk.Label(
+            damage_result_body,
+            text="",
+            font=self.fonts["body"],
+            bg=self.colors["surface"],
+            fg=self.colors["muted"]
+        )
+        self.damage_result_sub.pack(anchor="w", pady=(4, 0))
 
         # Hidden plate canvas for preview (kept for existing flow)
         self.plate_canvas = tk.Canvas(right_col, width=1, height=1, highlightthickness=0, bg=self.colors["bg"])
@@ -440,6 +470,7 @@ class PlakaTespitUygulamasi:
                 self.container_find_btn.config(state=tk.NORMAL)
                 self.container_read_btn.config(state=tk.DISABLED)
                 self.seal_btn.config(state=tk.NORMAL)
+                self.damage_btn.config(state=tk.NORMAL)
                 self.plate_canvas.delete("all")
                 self.reset_results()
                 self.reset_container_results()
@@ -492,6 +523,7 @@ class PlakaTespitUygulamasi:
             self.container_find_btn.config(state=tk.NORMAL)
             self.container_read_btn.config(state=tk.DISABLED)
             self.seal_btn.config(state=tk.NORMAL)
+            self.damage_btn.config(state=tk.NORMAL)
             self.update_video_frame()
             self.log_message("Video yüklendi ve akış başladı")
         else:
@@ -740,6 +772,8 @@ class PlakaTespitUygulamasi:
         self.container_result_sub.config(text="", fg=self.colors["muted"])
         self.container_result_status.config(text="○", fg=self.colors["muted"])
         self.seal_result_value.config(text="--", fg=self.colors["muted"])
+        self.damage_result_value.config(text="--", fg=self.colors["muted"])
+        self.damage_result_sub.config(text="", fg=self.colors["muted"])
         self._set_overlays([])
 
     def save_result(self):
@@ -957,8 +991,11 @@ class PlakaTespitUygulamasi:
 
             present = result.get("present")
             conf = result.get("confidence", 0.0)
+            low_conf = result.get("low_confidence", False)
 
-            if present:
+            if low_conf or present is None:
+                self.seal_result_value.config(text=f"DÜŞÜK GÜVEN ({conf:.0%})", fg=self.colors["warning"])
+            elif present:
                 self.seal_result_value.config(text="MEVCUT (OK)", fg=self.colors["success"])
             else:
                 self.seal_result_value.config(text="YOK", fg=self.colors["warning"])
@@ -976,11 +1013,129 @@ class PlakaTespitUygulamasi:
                     self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
 
             self.status_label.config(text=f"Mühür kontrol tamamlandı ({conf:.0%})")
-            self.log_message(f"Mühür kontrol: {'MEVCUT' if present else 'YOK'}")
+            if low_conf or present is None:
+                self.log_message("Mühür kontrol: DÜŞÜK GÜVEN")
+            else:
+                self.log_message(f"Mühür kontrol: {'MEVCUT' if present else 'YOK'}")
 
         except Exception as e:
             messagebox.showerror("Hata", f"Mühür kontrol hatası: {str(e)}")
             self.status_label.config(text="Mühür kontrol başarısız")
+
+    def check_container_damage(self):
+        """Konteyner hasar kontrolü ve hasar cinsi raporu."""
+        if self.original_image is None:
+            messagebox.showwarning("Uyarı", "Önce resim veya video yükleyin!")
+            return
+
+        if not self.damage_detector.model:
+            messagebox.showerror("Hata", "Hasar modeli yüklü değil!")
+            return
+
+        def _fmt_damage_type(name):
+            text = str(name or "").strip()
+            if not text:
+                return ""
+            key = text.replace("-", "_").replace(" ", "_").lower()
+            tr_names = {
+                "dent": "EZIK",
+                "scratch": "CIZIK",
+                "crack": "CATLAK",
+                "corrosion": "KOROZYON",
+                "deformation": "DEFORMASYON",
+                "breakage": "KIRILMA",
+                "broken": "KIRIK",
+                "hole": "DELIK",
+                "tear": "YIRTIK",
+                "paint_damage": "BOYA HASARI",
+                "damage": "HASAR",
+                "no_damage": "HASAR YOK",
+            }
+            if key in tr_names:
+                return tr_names[key]
+            return key.replace("_", " ").upper()
+
+        try:
+            self.status_label.config(text="Hasar kontrol ediliyor...")
+            self.root.update()
+
+            result = self.damage_detector.detect_damage(self.original_image)
+            if not result.get("success"):
+                err = result.get("error") or "Bilinmeyen hata"
+                self.damage_result_value.config(text=f"HATA ({err})", fg=self.colors["warning"])
+                self.damage_result_sub.config(text="", fg=self.colors["muted"])
+                self.status_label.config(text=f"Hasar kontrol başarısız: {err}")
+                self.log_message(f"Hasar kontrol başarısız: {err}")
+                return
+
+            has_damage = result.get("has_damage")
+            conf = float(result.get("confidence", 0.0) or 0.0)
+            low_conf = bool(result.get("low_confidence", False))
+            threshold_pct = int(round(float(self.damage_detector.min_damage_conf) * 100))
+
+            damage_types = result.get("damage_types") or []
+            primary_damage = result.get("damage_type")
+            if not damage_types and primary_damage:
+                damage_types = [primary_damage]
+            formatted_types = [_fmt_damage_type(t) for t in damage_types if t]
+
+            if low_conf or has_damage is None:
+                self.damage_result_value.config(text=f"DÜŞÜK GÜVEN ({conf:.0%})", fg=self.colors["warning"])
+                self.damage_result_sub.config(
+                    text=f"Eşik: %{threshold_pct} altı, sonuç bastırıldı",
+                    fg=self.colors["muted"],
+                )
+            elif has_damage:
+                type_text = ", ".join(formatted_types[:3]) if formatted_types else "HASAR"
+                self.damage_result_value.config(text=f"HASAR VAR ({type_text})", fg=self.colors["danger"])
+                self.damage_result_sub.config(text=f"Güven: {conf:.0%}", fg=self.colors["warning"])
+            else:
+                self.damage_result_value.config(text="HASAR YOK", fg=self.colors["success"])
+                self.damage_result_sub.config(text=f"Güven: {conf:.0%}", fg=self.colors["muted"])
+
+            self._set_overlays([])
+            boxes = result.get("boxes") or []
+            if boxes and not (low_conf or has_damage is None):
+                overlays = []
+                sorted_boxes = sorted(boxes, key=lambda b: b.get("confidence", 0.0), reverse=True)
+                for box in sorted_boxes:
+                    bbox = box.get("bbox")
+                    if not bbox:
+                        continue
+
+                    d_type = str(box.get("damage_type") or box.get("class_name") or "").lower()
+                    if has_damage is True and d_type == "no_damage":
+                        continue
+                    if has_damage is False and d_type != "no_damage":
+                        continue
+
+                    box_conf = float(box.get("confidence", 0.0) or 0.0)
+                    label_type = _fmt_damage_type(d_type) or "DAMAGE"
+                    overlays.append({
+                        "bbox": bbox,
+                        "label": f"{label_type} {box_conf:.2f}",
+                        "color": (35, 90, 235) if d_type != "no_damage" else (35, 180, 85),
+                    })
+                    if len(overlays) >= 4:
+                        break
+
+                if overlays:
+                    self._set_overlays(overlays)
+                    self.display_image(self.original_image, self.original_canvas, bgr_to_rgb=True)
+
+            self.status_label.config(text=f"Hasar kontrol tamamlandı ({conf:.0%})")
+            if low_conf or has_damage is None:
+                self.log_message(f"Hasar kontrol: DÜŞÜK GÜVEN (Eşik %{threshold_pct})")
+            elif has_damage:
+                shown = ", ".join(formatted_types[:3]) if formatted_types else "HASAR"
+                self.log_message(f"Hasar kontrol: HASAR VAR ({shown})")
+            else:
+                self.log_message("Hasar kontrol: HASAR YOK")
+
+        except Exception as e:
+            messagebox.showerror("Hata", f"Hasar kontrol hatası: {str(e)}")
+            self.status_label.config(text="Hasar kontrol başarısız")
+
     def display_image(self, image, canvas, bgr_to_rgb=False):
         """Resmi canvas'a göster"""
         if image is None:
@@ -1037,3 +1192,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
