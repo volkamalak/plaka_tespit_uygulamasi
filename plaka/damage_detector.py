@@ -18,16 +18,11 @@ class ContainerDamageDetector:
         model_path=None,
         damage_labels=None,
         no_damage_labels=None,
-        min_damage_conf=0.65,
+        min_damage_conf=0.50,
         min_class_margin=0.08,
         decision_margin=0.10,
         overlap_iou=0.65,
         secondary_type_window=0.15,
-        treat_empty_as_no_damage=None,
-        rescue_scales=(960, 1280, 1600, 1920),
-        rescue_vote_conf=0.20,
-        rescue_min_single_conf=0.35,
-        rescue_min_votes=2,
         min_box_area_ratio=0.0002,
         fallback_conf=0.1,
         fallback_imgsz=1280,
@@ -82,12 +77,6 @@ class ContainerDamageDetector:
         self.decision_margin = float(decision_margin)
         self.overlap_iou = float(overlap_iou)
         self.secondary_type_window = float(secondary_type_window)
-        self.treat_empty_as_no_damage = treat_empty_as_no_damage
-        self.model_has_no_damage_class = False
-        self.rescue_scales = tuple(int(s) for s in (rescue_scales or ()))
-        self.rescue_vote_conf = float(rescue_vote_conf)
-        self.rescue_min_single_conf = float(rescue_min_single_conf)
-        self.rescue_min_votes = int(rescue_min_votes)
         self.min_box_area_ratio = float(min_box_area_ratio)
         self.fallback_conf = float(fallback_conf)
         self.fallback_imgsz = int(fallback_imgsz) if fallback_imgsz else None
@@ -149,21 +138,17 @@ class ContainerDamageDetector:
         try:
             if Path(self.model_path).exists():
                 self.model = YOLO(str(self.model_path))
-                self.model_has_no_damage_class = self._model_has_no_damage_class()
                 print(f"Container damage model loaded: {self.model_path}")
             elif self.fallback_path.exists():
                 self.model_path = self.fallback_path
                 self.model = YOLO(str(self.model_path))
-                self.model_has_no_damage_class = self._model_has_no_damage_class()
                 print(f"Container damage model loaded: {self.model_path}")
             else:
                 print(f"WARN: Container damage model not found: {self.model_path}")
                 self.model = None
-                self.model_has_no_damage_class = False
         except Exception as exc:
             print(f"Container damage model load error: {exc}")
             self.model = None
-            self.model_has_no_damage_class = False
 
     def _class_name(self, class_id):
         if not self.model:
@@ -174,21 +159,6 @@ class ContainerDamageDetector:
         if isinstance(names, (list, tuple)) and 0 <= class_id < len(names):
             return str(names[class_id])
         return ""
-
-    def _model_has_no_damage_class(self):
-        if not self.model:
-            return False
-        names = getattr(self.model, "names", None)
-        if isinstance(names, dict):
-            labels = [str(v) for v in names.values()]
-        elif isinstance(names, (list, tuple)):
-            labels = [str(v) for v in names]
-        else:
-            labels = []
-        for label in labels:
-            if self._canonical_type(label) == "no_damage":
-                return True
-        return False
 
     def _canonical_type(self, class_name):
         key = self._normalize_key(class_name)
@@ -311,16 +281,6 @@ class ContainerDamageDetector:
         filtered = [item for item in summary if float(item.get("max_confidence", 0.0) or 0.0) >= min_keep]
         damage_types = [item.get("type", "") for item in filtered if item.get("type")]
         return filtered, damage_types
-
-    @staticmethod
-    def _combined_confidence(confs):
-        score = 1.0
-        for conf in confs:
-            c = float(conf or 0.0)
-            if c <= 0:
-                continue
-            score *= (1.0 - min(0.999, c))
-        return max(0.0, min(0.999, 1.0 - score))
 
     def detect_damage(self, image, conf_threshold=0.25):
         result = {
@@ -637,110 +597,14 @@ class ContainerDamageDetector:
                 "boxes": [],
                 "low_confidence": False,
                 "error": "No damage detected",
-                }, False, False, False)
-
-        def _rescue_low_confidence(primary_result, full_shape):
-            """Try multi-scale consensus when primary decision is low confidence."""
-            if not primary_result.get("low_confidence"):
-                return None
-
-            scales = []
-            for s in self.rescue_scales:
-                if s > 0 and s not in scales:
-                    scales.append(s)
-            if not scales:
-                return None
-
-            rescue_conf = min(conf_threshold, self.fallback_conf)
-            if rescue_conf <= 0:
-                rescue_conf = 0.05
-
-            grouped = {}
-            best_by_type = {}
-
-            def _add_candidate(cand):
-                if not cand or not cand.get("success"):
-                    return
-                if cand.get("has_damage") is False:
-                    return
-                d_type = cand.get("damage_type") or ""
-                d_type = str(d_type or "").strip().lower()
-                if not d_type:
-                    d_types = cand.get("damage_types") or []
-                    if d_types:
-                        d_type = str(d_types[0]).strip().lower()
-                if not d_type:
-                    return
-                conf = float(cand.get("confidence", 0.0) or 0.0)
-                grouped.setdefault(d_type, []).append(conf)
-                prev_best = best_by_type.get(d_type)
-                if prev_best is None or conf > float(prev_best.get("confidence", 0.0) or 0.0):
-                    best_by_type[d_type] = cand
-
-            _add_candidate(primary_result)
-            for scale in scales:
-                cand, _, is_cls, fatal = _infer(
-                    image,
-                    rescue_conf,
-                    imgsz=scale,
-                    full_shape=full_shape,
-                )
-                if fatal:
-                    return None
-                if is_cls:
-                    continue
-                _add_candidate(cand)
-
-            if not grouped:
-                return None
-
-            winner_type = ""
-            winner_score = 0.0
-            winner_votes = 0
-            winner_max_conf = 0.0
-
-            for d_type, confs in grouped.items():
-                combined = self._combined_confidence(confs)
-                votes = sum(1 for c in confs if c >= self.rescue_vote_conf)
-                max_conf = max(confs) if confs else 0.0
-                if (combined, votes, max_conf) > (winner_score, winner_votes, winner_max_conf):
-                    winner_type = d_type
-                    winner_score = combined
-                    winner_votes = votes
-                    winner_max_conf = max_conf
-
-            if (
-                winner_type
-                and winner_score >= self.min_damage_conf
-                and winner_votes >= self.rescue_min_votes
-                and winner_max_conf >= self.rescue_min_single_conf
-            ):
-                base = dict(best_by_type.get(winner_type) or primary_result)
-                base["success"] = True
-                base["has_damage"] = True
-                base["damage_type"] = winner_type
-                base["damage_types"] = [winner_type]
-                base["summary"] = [{
-                    "type": winner_type,
-                    "count": winner_votes,
-                    "max_confidence": winner_max_conf,
-                }]
-                base["confidence"] = winner_score
-                base["low_confidence"] = False
-                base["error"] = None
-                return base
-
-            return None
+            }, False, False, False)
 
         full_shape = getattr(image, "shape", None)
         primary, has_boxes, is_cls, fatal = _infer(image, conf_threshold, full_shape=full_shape)
         if fatal:
             return primary
-        if is_cls:
+        if is_cls or has_boxes:
             return primary
-        if has_boxes:
-            rescued = _rescue_low_confidence(primary, full_shape)
-            return rescued if rescued is not None else primary
 
         fallback_conf = min(conf_threshold, self.fallback_conf)
         fallback_imgsz = self.fallback_imgsz
@@ -754,11 +618,8 @@ class ContainerDamageDetector:
         )
         if fatal:
             return fallback_full
-        if is_cls:
+        if is_cls or has_boxes:
             return fallback_full
-        if has_boxes:
-            rescued = _rescue_low_confidence(fallback_full, full_shape)
-            return rescued if rescued is not None else fallback_full
 
         # Fallback: tiled search (2x2) for small objects.
         best = None
@@ -794,31 +655,9 @@ class ContainerDamageDetector:
                             best_score = score
 
         if best is not None:
-            rescued = _rescue_low_confidence(best, full_shape)
-            return rescued if rescued is not None else best
+            return best
 
-        # If the model has no explicit "no_damage" class, empty detection usually means clean surface.
-        empty_means_no_damage = self.treat_empty_as_no_damage
-        if empty_means_no_damage is None:
-            empty_means_no_damage = not self.model_has_no_damage_class
-
-        if empty_means_no_damage:
-            conf_est = max(self.min_damage_conf, min(0.99, 1.0 - float(conf_threshold)))
-            result.update({
-                "success": True,
-                "has_damage": False,
-                "damage_type": "",
-                "damage_types": [],
-                "summary": [],
-                "confidence": conf_est,
-                "class_name": "",
-                "boxes": [],
-                "low_confidence": False,
-                "error": None,
-            })
-            return result
-
-        # For models that include a no_damage class, empty detection is ambiguous.
+        # No detections -> do not force "no damage"; report as low confidence.
         result.update({
             "success": True,
             "has_damage": None,
@@ -832,3 +671,6 @@ class ContainerDamageDetector:
             "error": None,
         })
         return result
+    
+
+

@@ -25,13 +25,49 @@ class ContainerSealDetector:
         tile_imgsz=1600,
     ):
         project_root = Path(__file__).resolve().parents[1]
+        preferred_path = project_root / "models" / "weight_seal.pt"
         default_path = project_root / "models" / "muhur_bulma.pt"
         fallback_path = project_root / "models" / "container_seal.pt"
-        self.model_path = Path(model_path) if model_path else default_path
-        self.fallback_path = fallback_path
+        if model_path:
+            self.model_path = Path(model_path)
+        else:
+            self.model_path = preferred_path if preferred_path.exists() else default_path
+        self.fallback_paths = []
+        for path in (default_path, fallback_path):
+            if path.resolve() != Path(self.model_path).resolve():
+                self.fallback_paths.append(path)
         self.model = None
-        self.present_labels = {s.lower() for s in (present_labels or ["seal", "present", "var"])}
-        self.absent_labels = {s.lower() for s in (absent_labels or ["no_seal", "absent", "yok"])}
+        default_present = [
+            "seal",
+            "present",
+            "var",
+            "with_seal",
+            "has_seal",
+            "seal_present",
+            "sealed",
+            "muhur",
+            "muhurlu",
+        ]
+        default_absent = [
+            "no_seal",
+            "absent",
+            "yok",
+            "without_seal",
+            "seal_absent",
+            "missing_seal",
+            "unsealed",
+            "muhursuz",
+            "no_muhur",
+        ]
+        self.present_labels = {
+            self._normalize_key(s) for s in (present_labels or default_present)
+        }
+        self.absent_labels = {
+            self._normalize_key(s) for s in (absent_labels or default_absent)
+        }
+        self.present_token_hints = {"seal", "sealed", "muhur", "muhurlu"}
+        self.absent_token_hints = {"no", "none", "without", "absent", "missing", "yok", "unsealed", "muhursuz"}
+        self.positive_context_tokens = {"with", "has", "present", "var"}
         self.min_present_conf = float(min_present_conf)
         self.min_box_area_ratio = float(min_box_area_ratio)
         self.fallback_conf = float(fallback_conf)
@@ -39,31 +75,83 @@ class ContainerSealDetector:
         self.tile_imgsz = int(tile_imgsz) if tile_imgsz else None
         self.load_model()
 
+    @staticmethod
+    def _normalize_key(name):
+        key = str(name or "").strip().lower()
+        key = key.replace("-", "_").replace(" ", "_")
+        while "__" in key:
+            key = key.replace("__", "_")
+        return key
+
+    @staticmethod
+    def _count_names(names):
+        if isinstance(names, dict):
+            return len(names)
+        if isinstance(names, (list, tuple)):
+            return len(names)
+        return 0
+
+    def _class_count(self, names=None):
+        count = self._count_names(names)
+        if count > 0:
+            return count
+        return self._count_names(getattr(self.model, "names", None))
+
     def load_model(self):
         try:
-            if Path(self.model_path).exists():
-                self.model = YOLO(str(self.model_path))
-                print(f"Container seal model loaded: {self.model_path}")
-            elif self.fallback_path.exists():
-                self.model_path = self.fallback_path
-                self.model = YOLO(str(self.model_path))
-                print(f"Container seal model loaded: {self.model_path}")
-            else:
-                print(f"WARN: Container seal model not found: {self.model_path}")
-                self.model = None
+            candidates = [Path(self.model_path), *self.fallback_paths]
+            for path in candidates:
+                if path.exists():
+                    self.model_path = path
+                    self.model = YOLO(str(self.model_path))
+                    print(f"Container seal model loaded: {self.model_path}")
+                    return
+
+            tried = ", ".join(str(p) for p in candidates)
+            print(f"WARN: Container seal model not found. Tried: {tried}")
+            self.model = None
         except Exception as exc:
             print(f"Container seal model load error: {exc}")
             self.model = None
 
-    def _class_name(self, class_id):
+    def _class_name(self, class_id, names=None):
         if not self.model:
             return ""
-        names = getattr(self.model, "names", None)
+        if names is None:
+            names = getattr(self.model, "names", None)
         if isinstance(names, dict):
             return str(names.get(class_id, ""))
         if isinstance(names, (list, tuple)) and 0 <= class_id < len(names):
             return str(names[class_id])
         return ""
+
+    def _class_to_presence(self, class_name):
+        key = self._normalize_key(class_name)
+        if not key:
+            return None
+        if key in self.present_labels:
+            return True
+        if key in self.absent_labels:
+            return False
+
+        token_set = {token for token in key.split("_") if token}
+        has_present_hint = bool(token_set & self.present_token_hints)
+        has_absent_hint = bool(token_set & self.absent_token_hints)
+        has_positive_context = bool(token_set & self.positive_context_tokens)
+
+        if has_absent_hint and has_present_hint:
+            return False
+        if key.startswith("no_") and has_present_hint:
+            return False
+        if key.startswith("without_") and has_present_hint:
+            return False
+        if key.startswith("unsealed"):
+            return False
+        if has_present_hint and (has_positive_context or not has_absent_hint):
+            return True
+        if has_absent_hint and not has_present_hint:
+            return False
+        return None
 
     def detect_seal(self, image, conf_threshold=0.25):
         result = {
@@ -145,15 +233,23 @@ class ContainerSealDetector:
                         "error": "Classification output not available",
                     }, False, True, True)
 
-                class_name = self._class_name(top_idx)
-                class_key = class_name.lower()
-
-                if class_key in self.present_labels:
-                    present = True
-                elif class_key in self.absent_labels:
-                    present = False
-                else:
-                    present = True
+                names = getattr(r0, "names", None)
+                class_name = self._class_name(top_idx, names=names)
+                present = self._class_to_presence(class_name)
+                if present is None:
+                    # Single-class models (e.g. only "seal") should still map to present.
+                    if self._class_count(names) <= 1:
+                        present = True
+                    else:
+                        return ({
+                            "success": True,
+                            "present": None,
+                            "confidence": top_conf,
+                            "class_name": class_name,
+                            "boxes": [],
+                            "low_confidence": True,
+                            "error": None,
+                        }, False, True, False)
 
                 if present and top_conf < self.min_present_conf:
                     return ({
@@ -180,6 +276,7 @@ class ContainerSealDetector:
             present_best = (None, 0.0, "")
             absent_best = (None, 0.0, "")
             boxes = []
+            names = getattr(r0, "names", None)
             offset_x, offset_y = offset
             full_area = None
             if full_shape is not None and len(full_shape) >= 2:
@@ -198,8 +295,8 @@ class ContainerSealDetector:
                         continue
                 conf_val = float(box.conf[0])
                 cls = int(box.cls[0])
-                class_name = self._class_name(cls)
-                class_key = class_name.lower()
+                class_name = self._class_name(cls, names=names)
+                present_flag = self._class_to_presence(class_name)
 
                 boxes.append({
                     "bbox": (x1, y1, x2, y2),
@@ -208,10 +305,10 @@ class ContainerSealDetector:
                     "class_name": class_name,
                 })
 
-                if class_key in self.present_labels:
+                if present_flag is True:
                     if conf_val > present_best[1]:
                         present_best = ((x1, y1, x2, y2), conf_val, class_name)
-                elif class_key in self.absent_labels:
+                elif present_flag is False:
                     if conf_val > absent_best[1]:
                         absent_best = ((x1, y1, x2, y2), conf_val, class_name)
 
@@ -248,8 +345,20 @@ class ContainerSealDetector:
                 }, True, False, False)
 
             if boxes:
-                # If labels are unknown, fall back to presence by any detection.
+                # Unknown labels:
+                # - single-class models => any box implies present.
+                # - multi-class models => ambiguous (low confidence/uncertain).
                 best_box = max(boxes, key=lambda b: b["confidence"])
+                if self._class_count(names) > 1:
+                    return ({
+                        "success": True,
+                        "present": None,
+                        "confidence": best_box["confidence"],
+                        "class_name": best_box["class_name"],
+                        "boxes": boxes,
+                        "low_confidence": True,
+                        "error": None,
+                    }, True, False, False)
                 if best_box["confidence"] < self.min_present_conf:
                     return ({
                         "success": True,
